@@ -1,0 +1,6 @@
+rootProject.name = 'battalion-revival'
+
+include 'protocol'
+include 'game-core'
+include 'client'
+include 'server'
