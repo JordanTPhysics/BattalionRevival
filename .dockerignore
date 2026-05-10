@@ -1,0 +1,23 @@
+# Shrink Docker build context — only protocol, game-core, server are copied in the Dockerfile.
+
+.git
+.github
+
+# Not used by :server:bootJar
+battalion-browser/
+client/
+
+# Build outputs & local Gradle cache (avoid stale or huge context)
+.gradle/
+**/build/
+
+# IDE / OS
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+
+# Secrets (never send to daemon)
+.env
+.env.*
