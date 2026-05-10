@@ -7,7 +7,7 @@ public final class ProtocolVersions {
     /** Bump when JSON envelope or command shapes change incompatibly. */
     public static final int NETWORK_PROTOCOL_VERSION = 1;
     /** Bump when {@link MatchSnapshot} tile/unit/player layout changes incompatibly. */
-    public static final int MATCH_SNAPSHOT_SCHEMA_VERSION = 1;
+    public static final int MATCH_SNAPSHOT_SCHEMA_VERSION = 2;
 
     private ProtocolVersions() {
     }

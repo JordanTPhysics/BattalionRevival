@@ -4,6 +4,7 @@ import com.game.model.Player;
 import com.game.model.units.Unit;
 import com.game.model.units.UnitType;
 import com.game.network.protocol.CsAttackUnit;
+import com.game.network.protocol.CsMoveAndAttackUnit;
 import com.game.network.protocol.CsEndTurn;
 import com.game.network.protocol.CsFactoryBuild;
 import com.game.network.protocol.CsMoveUnit;
@@ -55,6 +56,9 @@ public final class AuthoritativeCommandExecutor {
         }
         if (envelope instanceof CsAttackUnit a) {
             return handleAttack(session, issuingSeatIndex, expectedMatchId, a);
+        }
+        if (envelope instanceof CsMoveAndAttackUnit maa) {
+            return handleMoveAndAttack(session, issuingSeatIndex, expectedMatchId, maa);
         }
         if (envelope instanceof CsFactoryBuild b) {
             return handleFactory(session, issuingSeatIndex, expectedMatchId, b);
@@ -124,6 +128,50 @@ public final class AuthoritativeCommandExecutor {
         }
         if (!session.tryAttack(attacker, defender)) {
             return CommandApplyResult.reject("ILLEGAL_ATTACK", "Attack rejected by combat rules");
+        }
+        return CommandApplyResult.ok(MatchSnapshotExporter.export(session, expectedMatchId));
+    }
+
+    private static CommandApplyResult handleMoveAndAttack(
+
+        PlayableGameSession session,
+        int seatIndex,
+        String expectedMatchId,
+        CsMoveAndAttackUnit command
+    ) {
+        if (!expectedMatchId.equals(command.matchId())) {
+            return CommandApplyResult.reject("MATCH_ID", "Stale match id");
+        }
+        if (!isActiveSeat(session, seatIndex)) {
+            return CommandApplyResult.reject("NOT_YOUR_TURN", "Seat cannot act now");
+        }
+        Unit unit = findUnit(session, command.unitId());
+        Unit defender = findUnit(session, command.defenderUnitId());
+        if (unit == null || defender == null || unit.getOwner() != session.getPlayers().get(seatIndex)) {
+            return CommandApplyResult.reject("BAD_UNIT", "Unit not found or not owned");
+        }
+        if (defender.getOwner() == unit.getOwner()) {
+            return CommandApplyResult.reject("BAD_UNIT", "Cannot attack friendly unit");
+        }
+        List<Point> path = new ArrayList<>();
+        for (GridPoint gp : command.pathIncludingStart()) {
+            path.add(new Point(gp.x(), gp.y()));
+        }
+        PlayableGameSession.MoveAlongPathOutcome moved = session.executeMoveAlongPath(unit, path);
+        if (!moved.accepted()) {
+            return CommandApplyResult.reject("ILLEGAL_MOVE", "Path rejected by movement rules");
+        }
+        // Same resolution as {@link com.game.engine.ai.AiActionApplicator} for MoveAndAttack.
+        if (moved.cloakedEnemyRevealed() != null) {
+            session.finishActionAfterMoveAlongPath(unit, moved);
+            return CommandApplyResult.ok(MatchSnapshotExporter.export(session, expectedMatchId));
+        }
+        if (session.canExecuteAttack(unit, defender)) {
+            if (!session.tryAttack(unit, defender)) {
+                session.markUnitActionConsumed(unit);
+            }
+        } else {
+            session.markUnitActionConsumed(unit);
         }
         return CommandApplyResult.ok(MatchSnapshotExporter.export(session, expectedMatchId));
     }

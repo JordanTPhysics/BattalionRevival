@@ -7,10 +7,11 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
 /**
  * Top-level WebSocket / REST payload discriminator for Jackson polymorphic deserialization.
  */
-@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "kind", visible = true)
+@JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "kind")
 @JsonSubTypes({
     @JsonSubTypes.Type(value = CsMoveUnit.class, name = "CS_MOVE_UNIT"),
     @JsonSubTypes.Type(value = CsAttackUnit.class, name = "CS_ATTACK_UNIT"),
+    @JsonSubTypes.Type(value = CsMoveAndAttackUnit.class, name = "CS_MOVE_AND_ATTACK_UNIT"),
     @JsonSubTypes.Type(value = CsFactoryBuild.class, name = "CS_FACTORY_BUILD"),
     @JsonSubTypes.Type(value = CsWarmachineBuild.class, name = "CS_WARMACHINE_BUILD"),
     @JsonSubTypes.Type(value = CsWarmachineDrill.class, name = "CS_WARMACHINE_DRILL"),
@@ -27,6 +28,7 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
 public sealed interface NetEnvelope permits
     CsMoveUnit,
     CsAttackUnit,
+    CsMoveAndAttackUnit,
     CsFactoryBuild,
     CsWarmachineBuild,
     CsWarmachineDrill,

@@ -142,45 +142,7 @@ public class AiTurnExecutor {
         }
 
         private void applyAction(AiAction action) {
-            if (action instanceof AiAction.PassUnit pu) {
-                session.markUnitActionConsumed(pu.unit());
-                return;
-            }
-            if (action instanceof AiAction.MoveUnit mu) {
-                PlayableGameSession.MoveAlongPathOutcome o = session.executeMoveAlongPath(mu.unit(), mu.path());
-                if (!o.accepted()) {
-                    session.markUnitActionConsumed(mu.unit());
-                    return;
-                }
-                session.finishActionAfterMoveAlongPath(mu.unit(), o);
-                return;
-            }
-            if (action instanceof AiAction.MoveAndAttack ma) {
-                PlayableGameSession.MoveAlongPathOutcome o = session.executeMoveAlongPath(ma.unit(), ma.path());
-                if (!o.accepted()) {
-                    session.markUnitActionConsumed(ma.unit());
-                    return;
-                }
-                if (o.cloakedEnemyRevealed() != null) {
-                    session.finishActionAfterMoveAlongPath(ma.unit(), o);
-                    return;
-                }
-                if (session.canExecuteAttack(ma.unit(), ma.target())) {
-                    session.tryAttack(ma.unit(), ma.target());
-                } else {
-                    session.markUnitActionConsumed(ma.unit());
-                }
-                return;
-            }
-            if (action instanceof AiAction.Attack a) {
-                if (!session.tryAttack(a.attacker(), a.target())) {
-                    session.markUnitActionConsumed(a.attacker());
-                }
-                return;
-            }
-            if (action instanceof AiAction.BuildUnit b) {
-                session.tryFactoryBuildUnit(b.factoryX(), b.factoryY(), b.type());
-            }
+            AiActionApplicator.apply(session, action);
         }
     }
 }

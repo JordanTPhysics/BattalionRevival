@@ -16,6 +16,8 @@ Example (PNGs next to WebPs in the same folder; WebPs are not removed):
 
 Output PNG filenames are always lowercase (e.g. Archipelago_1.webp -> archipelago_1.png).
 Subfolders under --src are preserved; only the file basename is lowercased.
+
+python scripts/convert_images_to_png.py --src C:/Users/Thijssenj/Projects/BattalionRevival/battalion-browser/public/assets/custom --dst C:/Users/Thijssenj/Projects/BattalionRevival/battalion-browser/public/assets/structures/heni --ext png
 """
 
 from __future__ import annotations

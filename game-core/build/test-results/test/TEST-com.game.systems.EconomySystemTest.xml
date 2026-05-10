@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<testsuite name="com.game.systems.EconomySystemTest" tests="4" skipped="0" failures="0" errors="0" timestamp="2026-05-06T22:24:57" hostname="ESGUK-LAP416" time="0.054">
+<testsuite name="com.game.systems.EconomySystemTest" tests="4" skipped="0" failures="0" errors="0" timestamp="2026-05-10T17:35:32" hostname="ESGUK-LAP416" time="0.006">
   <properties/>
-  <testcase name="stacksMultipleOilStructuresUsingCombinedRawIncome()" classname="com.game.systems.EconomySystemTest" time="0.039"/>
-  <testcase name="invalidTurnNumberClampsLikeRoundOneDivisor()" classname="com.game.systems.EconomySystemTest" time="0.002"/>
-  <testcase name="oilRigScalesHigherOnEarlyRounds()" classname="com.game.systems.EconomySystemTest" time="0.002"/>
-  <testcase name="noIncomeStructuresAlwaysGrantsAtLeastOne()" classname="com.game.systems.EconomySystemTest" time="0.001"/>
+  <testcase name="stacksMultipleOilStructuresUsingCombinedRawIncome()" classname="com.game.systems.EconomySystemTest" time="0.004"/>
+  <testcase name="invalidTurnNumberClampsLikeRoundOneDivisor()" classname="com.game.systems.EconomySystemTest" time="0.001"/>
+  <testcase name="oilRigScalesHigherOnEarlyRounds()" classname="com.game.systems.EconomySystemTest" time="0.001"/>
+  <testcase name="noIncomeStructuresAlwaysGrantsAtLeastOne()" classname="com.game.systems.EconomySystemTest" time="0.0"/>
   <system-out><![CDATA[]]></system-out>
   <system-err><![CDATA[]]></system-err>
 </testsuite>

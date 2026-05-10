@@ -7,12 +7,14 @@ import com.game.model.structures.Structure;
 import com.game.model.units.FacingDirection;
 import com.game.model.units.Unit;
 import com.game.model.units.UnitType;
+import com.game.network.protocol.GridPoint;
 import com.game.network.protocol.MatchSnapshot;
 import com.game.network.protocol.PlayerSnapshot;
 import com.game.network.protocol.ProtocolVersions;
 import com.game.network.protocol.TileSnapshot;
 import com.game.network.protocol.UnitSnapshot;
 
+import java.awt.Point;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -46,6 +48,14 @@ public final class MatchSnapshotExporter {
                 int seat = players.indexOf(p);
                 Tile at = map.getTile(u.getPosition().getX(), u.getPosition().getY());
                 FacingDirection face = at != null ? at.getUnitFacing() : FacingDirection.EAST;
+                List<Point> pendingPath = u.takePendingClientMovePathIncludingStart();
+                List<GridPoint> lastMovePath = null;
+                if (pendingPath != null && pendingPath.size() >= 2) {
+                    lastMovePath = new ArrayList<>(pendingPath.size());
+                    for (Point step : pendingPath) {
+                        lastMovePath.add(new GridPoint(step.x, step.y));
+                    }
+                }
                 units.add(new UnitSnapshot(
                     u.getId(),
                     u.getUnitType().name(),
@@ -56,7 +66,8 @@ public final class MatchSnapshotExporter {
                     u.hasMoved(),
                     u.isCloaked(),
                     face.name(),
-                    u.getUnitType() == UnitType.Warmachine ? u.getWarmachineFunds() : null
+                    u.getUnitType() == UnitType.Warmachine ? u.getWarmachineFunds() : null,
+                    lastMovePath
                 ));
             }
         }

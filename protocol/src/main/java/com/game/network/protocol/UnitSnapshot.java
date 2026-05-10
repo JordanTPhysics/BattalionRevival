@@ -2,6 +2,8 @@ package com.game.network.protocol;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 
+import java.util.List;
+
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record UnitSnapshot(
     String id,
@@ -13,6 +15,8 @@ public record UnitSnapshot(
     boolean hasMoved,
     boolean cloaked,
     String facing,
-    Integer warmachineFunds
+    Integer warmachineFunds,
+    /** Authoritative orthogonal path for the last move animation; omitted when absent. */
+    List<GridPoint> lastMovePathIncludingStart
 ) {
 }

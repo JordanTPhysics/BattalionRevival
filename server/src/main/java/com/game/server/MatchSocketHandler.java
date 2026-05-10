@@ -3,8 +3,9 @@ package com.game.server;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.game.engine.AuthoritativeCommandExecutor;
 import com.game.engine.MatchSnapshotExporter;
-import com.game.engine.PlayableGameSession;
+import com.game.engine.ai.HeadlessAiTurnRunner;
 import com.game.network.protocol.CsPing;
+import com.game.network.protocol.MatchSnapshot;
 import com.game.network.protocol.NetEnvelope;
 import com.game.network.protocol.ProtocolVersions;
 import com.game.network.protocol.ScCommandResult;
@@ -15,8 +16,6 @@ import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
-
-import java.io.IOException;
 
 @Component
 public class MatchSocketHandler extends TextWebSocketHandler {
@@ -43,9 +42,19 @@ public class MatchSocketHandler extends TextWebSocketHandler {
             session.close(CloseStatus.BAD_DATA);
             return;
         }
-        room.register(session);
-        room.sendWelcome(session, seat, mapper);
-        room.sendSnapshot(session, MatchSnapshotExporter.export(room.session(), matchId), mapper);
+        synchronized (room) {
+            room.register(session);
+            HeadlessAiTurnRunner.runUntilNextHumanOrDone(
+                room.session(),
+                room.aiControlledSeats()
+            );
+            room.sendWelcome(session, seat, mapper);
+            room.sendSnapshot(
+                session,
+                MatchSnapshotExporter.export(room.session(), matchId),
+                mapper
+            );
+        }
     }
 
     @Override
@@ -65,16 +74,40 @@ public class MatchSocketHandler extends TextWebSocketHandler {
             return;
         }
 
-        AuthoritativeCommandExecutor.CommandApplyResult result =
-            AuthoritativeCommandExecutor.execute(room.session(), seat, matchId, env);
+        final ScCommandResult payload;
+        synchronized (room) {
+            if (room.aiControlledSeats().contains(seat)) {
+                session.sendMessage(new TextMessage(mapper.writeValueAsString(
+                    new ScCommandResult(
+                        ProtocolVersions.NETWORK_PROTOCOL_VERSION,
+                        false,
+                        "AI_SEAT",
+                        "This seat is controlled by the server",
+                        MatchSnapshotExporter.export(room.session(), matchId)
+                    )
+                )));
+                return;
+            }
+            AuthoritativeCommandExecutor.CommandApplyResult result =
+                AuthoritativeCommandExecutor.execute(room.session(), seat, matchId, env);
 
-        ScCommandResult payload = new ScCommandResult(
-            ProtocolVersions.NETWORK_PROTOCOL_VERSION,
-            result.accepted(),
-            result.reasonCode(),
-            result.detail(),
-            result.snapshot()
-        );
+            MatchSnapshot snap = result.snapshot();
+            if (result.accepted() && snap != null) {
+                HeadlessAiTurnRunner.runUntilNextHumanOrDone(
+                    room.session(),
+                    room.aiControlledSeats()
+                );
+                snap = MatchSnapshotExporter.export(room.session(), matchId);
+            }
+
+            payload = new ScCommandResult(
+                ProtocolVersions.NETWORK_PROTOCOL_VERSION,
+                result.accepted(),
+                result.reasonCode(),
+                result.detail(),
+                snap
+            );
+        }
         room.broadcastJson(mapper.writeValueAsString(payload));
     }
 

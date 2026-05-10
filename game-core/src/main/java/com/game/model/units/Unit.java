@@ -3,6 +3,9 @@ package com.game.model.units;
 import com.game.model.Player;
 import com.game.model.Position;
 
+import java.awt.Point;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 public class Unit {
@@ -38,6 +41,11 @@ public class Unit {
     private boolean cloaked;
     /** Private purse for onboard production ({@link UnitType#Warmachine} only). */
     private int warmachineFunds;
+    /**
+     * Orthogonal path (including start) for the last {@code executeMoveAlongPath}; consumed when
+     * emitting the next {@link com.game.network.protocol.MatchSnapshot}.
+     */
+    private List<Point> pendingClientMovePathIncludingStart;
 
     public Unit(UnitType unitType, Player owner, Position position) {
         this.id = UUID.randomUUID().toString();
@@ -57,6 +65,17 @@ public class Unit {
     }
 
     public String getId() { return id; }
+
+    public void setPendingClientMovePathIncludingStart(List<Point> path) {
+        this.pendingClientMovePathIncludingStart = path == null ? null : new ArrayList<>(path);
+    }
+
+    /** Returns and clears the pending move path for snapshot export. */
+    public List<Point> takePendingClientMovePathIncludingStart() {
+        List<Point> p = this.pendingClientMovePathIncludingStart;
+        this.pendingClientMovePathIncludingStart = null;
+        return p;
+    }
     public UnitType getUnitType() { return unitType; }
     public Player getOwner() { return owner; }
     public int getHealth() { return health; }

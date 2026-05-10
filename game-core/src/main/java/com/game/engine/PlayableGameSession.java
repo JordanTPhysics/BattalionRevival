@@ -371,6 +371,7 @@ public class PlayableGameSession {
         }
         clearMoveAnimationDisplacementStack();
         resetCaptureBeforeMove(unit);
+        int cloakBreakIndex = -1;
         Unit cloakInterrupted = null;
         for (int i = 1; i < pathIncludingStart.size(); i++) {
             Point from = pathIncludingStart.get(i - 1);
@@ -380,10 +381,25 @@ public class PlayableGameSession {
                 cloakedAtNext.setCloaked(false);
                 rewindMovementSteps(unit, pathIncludingStart, i - 1);
                 cloakInterrupted = cloakedAtNext;
+                cloakBreakIndex = i;
                 break;
             }
             applyMovementStepWithFacing(unit, from, to);
         }
+        List<Point> clientAnimPath;
+        if (cloakInterrupted != null) {
+            if (cloakBreakIndex <= 0) {
+                clientAnimPath = null;
+            } else {
+                clientAnimPath = new ArrayList<>(pathIncludingStart.subList(0, cloakBreakIndex));
+            }
+        } else {
+            clientAnimPath = new ArrayList<>(pathIncludingStart);
+        }
+        if (clientAnimPath != null && clientAnimPath.size() < 2) {
+            clientAnimPath = null;
+        }
+        unit.setPendingClientMovePathIncludingStart(clientAnimPath);
         completeAnimatedMove(unit);
         return MoveAlongPathOutcome.ok(cloakInterrupted);
     }

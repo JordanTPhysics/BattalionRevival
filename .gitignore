@@ -1,0 +1,49 @@
+# Battalion Revival — root (Gradle JVM + nested Next.js in battalion-browser/)
+
+# --- Gradle ---
+.gradle/
+build/
+
+# --- JVM / compiled output ---
+*.class
+hs_err_pid*
+replay_pid*
+out/
+
+# --- IDE ---
+.idea/
+*.iml
+*.ipr
+*.iws
+.project
+.classpath
+.settings/
+
+# Local VS Code / Cursor workspace settings (machine-specific paths)
+.vscode/settings.json
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# --- Env & secrets ---
+.env
+.env.*
+!.env.example
+
+# --- Node / Next.js (also see battalion-browser/.gitignore) ---
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnpm-debug.log*
+.next/
+.vercel
+*.tsbuildinfo
+
+# --- Logs & coverage ---
+*.log
+coverage/
+dist/

@@ -12,6 +12,8 @@ import org.springframework.web.socket.WebSocketSession;
 
 import java.io.IOException;
 import java.util.Collection;
+import java.util.Collections;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArraySet;
 
@@ -22,15 +24,28 @@ import java.util.concurrent.CopyOnWriteArraySet;
 public class MatchRoomRegistry {
     private final ConcurrentHashMap<String, AuthoritativeMatchRoom> rooms = new ConcurrentHashMap<>();
 
-    public AuthoritativeMatchRoom getOrCreateRoom(String matchId, PlayableGameSession session) {
-        return rooms.computeIfAbsent(matchId, id -> new AuthoritativeMatchRoom(id, session));
+    public AuthoritativeMatchRoom getOrCreateRoom(String matchId, PlayableGameSession session, Set<Integer> aiControlledSeats) {
+        return rooms.computeIfAbsent(
+            matchId,
+            id -> new AuthoritativeMatchRoom(id, session, aiControlledSeats)
+        );
     }
 
     /**
      * If no room exists for {@code matchId}, creates one; otherwise keeps the existing session (idempotent for joining players).
      */
+    public void ensureRoom(String matchId, PlayableGameSession session, Set<Integer> aiControlledSeats) {
+        rooms.compute(
+            matchId,
+            (id, existing) -> existing != null
+                ? existing
+                : new AuthoritativeMatchRoom(id, session, aiControlledSeats)
+        );
+    }
+
+    /** @see #ensureRoom(String, PlayableGameSession, Set) */
     public void ensureRoom(String matchId, PlayableGameSession session) {
-        rooms.compute(matchId, (id, existing) -> existing != null ? existing : new AuthoritativeMatchRoom(id, session));
+        ensureRoom(matchId, session, Set.of());
     }
 
     public AuthoritativeMatchRoom get(String matchId) {
@@ -48,11 +63,13 @@ public class MatchRoomRegistry {
     public static final class AuthoritativeMatchRoom {
         private final String matchId;
         private final PlayableGameSession session;
+        private final Set<Integer> aiControlledSeats;
         private final CopyOnWriteArraySet<WebSocketSession> sockets = new CopyOnWriteArraySet<>();
 
-        private AuthoritativeMatchRoom(String matchId, PlayableGameSession session) {
+        private AuthoritativeMatchRoom(String matchId, PlayableGameSession session, Set<Integer> aiControlledSeats) {
             this.matchId = matchId;
             this.session = session;
+            this.aiControlledSeats = Collections.unmodifiableSet(Set.copyOf(aiControlledSeats));
         }
 
         public String matchId() {
@@ -61,6 +78,13 @@ public class MatchRoomRegistry {
 
         public PlayableGameSession session() {
             return session;
+        }
+
+        /**
+         * Seat indices played by the server's {@link com.game.engine.ai.HeadlessAiTurnRunner} when active.
+         */
+        public Set<Integer> aiControlledSeats() {
+            return aiControlledSeats;
         }
 
         public void register(WebSocketSession ws) {

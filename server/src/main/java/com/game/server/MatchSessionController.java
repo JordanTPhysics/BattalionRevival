@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Locale;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
@@ -64,7 +65,7 @@ public class MatchSessionController {
         } catch (IllegalArgumentException ex) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body("unknown map slug: " + slug);
         }
-        registry.ensureRoom(matchId, new PlayableGameSession(map));
+        registry.ensureRoom(matchId, new PlayableGameSession(map), Set.of());
         return existed
             ? ResponseEntity.ok("match already existed")
             : ResponseEntity.status(HttpStatus.CREATED).body("match created");

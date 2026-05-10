@@ -11,6 +11,7 @@ import com.game.persistence.MapsWorkspace;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Set;
 
 @Configuration
 public class DemoMatchBootstrap {
@@ -29,7 +30,7 @@ public class DemoMatchBootstrap {
             } catch (Exception ex) {
                 map = DemoMaps.plains20();
             }
-            registry.getOrCreateRoom("demo", new PlayableGameSession(map));
+            registry.getOrCreateRoom("demo", new PlayableGameSession(map), Set.of(1));
         };
     }
 }

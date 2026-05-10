@@ -2,7 +2,6 @@
 
 Java desktop turn-based tactics inspired by *Battalion: Nemesis*. The playable client is **Swing-based** with a dark military HUD, procedural battlefield overlays (movement reach, attack bands), WAV combat/movement audio, and optional AI opponents.
 
-This document reflects **behavior implemented in code** as of the current tree—not the original design brief.
 
 ---
 

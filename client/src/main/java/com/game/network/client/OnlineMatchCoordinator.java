@@ -1,7 +1,15 @@
 package com.game.network.client;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.game.network.protocol.CsAttackUnit;
+import com.game.network.protocol.CsMoveAndAttackUnit;
 import com.game.network.protocol.CsEndTurn;
+import com.game.network.protocol.CsFactoryBuild;
+import com.game.network.protocol.CsMoveUnit;
+import com.game.network.protocol.CsSurrender;
+import com.game.network.protocol.CsWarmachineBuild;
+import com.game.network.protocol.CsWarmachineDrill;
+import com.game.network.protocol.GridPoint;
 import com.game.network.protocol.MatchSnapshot;
 import com.game.network.protocol.NetEnvelope;
 import com.game.network.protocol.ProtocolJson;
@@ -17,12 +25,13 @@ import okhttp3.WebSocket;
 import okhttp3.WebSocketListener;
 
 import javax.swing.SwingUtilities;
+import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 /**
- * OkHttp WebSocket client for authoritative snapshots and issuing {@link CsEndTurn}.
+ * OkHttp WebSocket client for authoritative snapshots and issuing multiplayer commands.
  */
 public final class OnlineMatchCoordinator implements AutoCloseable {
 
@@ -89,8 +98,14 @@ public final class OnlineMatchCoordinator implements AutoCloseable {
             SwingUtilities.invokeLater(() -> onSnapshot.accept(snap.snapshot()));
             return;
         }
-        if (env instanceof ScCommandResult cmd && cmd.snapshotIfAccepted() != null) {
-            SwingUtilities.invokeLater(() -> onSnapshot.accept(cmd.snapshotIfAccepted()));
+        if (env instanceof ScCommandResult cmd) {
+            if (cmd.accepted() && cmd.snapshotIfAccepted() != null) {
+                SwingUtilities.invokeLater(() -> onSnapshot.accept(cmd.snapshotIfAccepted()));
+            } else if (!cmd.accepted()) {
+                String code = cmd.reasonCode() != null ? cmd.reasonCode() : "REJECT";
+                String detail = cmd.detail() != null ? cmd.detail() : "";
+                SwingUtilities.invokeLater(() -> onIssue.accept(code + ": " + detail));
+            }
             return;
         }
         if (env instanceof ScError err) {
@@ -98,16 +113,48 @@ public final class OnlineMatchCoordinator implements AutoCloseable {
         }
     }
 
-    public void requestEndTurn() {
+    private void send(NetEnvelope envelope) {
         WebSocket ws = webSocket;
         if (ws == null || closed) {
             return;
         }
         try {
-            ws.send(ProtocolJson.write(new CsEndTurn(ProtocolVersions.NETWORK_PROTOCOL_VERSION, matchId)));
+            ws.send(ProtocolJson.write(envelope));
         } catch (JsonProcessingException e) {
-            SwingUtilities.invokeLater(() -> onIssue.accept("Failed to serialize end-turn"));
+            SwingUtilities.invokeLater(() -> onIssue.accept("Failed to serialize command"));
         }
+    }
+
+    public void requestMoveUnit(String unitId, List<GridPoint> pathIncludingStart) {
+        send(new CsMoveUnit(ProtocolVersions.NETWORK_PROTOCOL_VERSION, matchId, unitId, pathIncludingStart));
+    }
+
+    public void requestAttack(String attackerUnitId, String defenderUnitId) {
+        send(new CsAttackUnit(ProtocolVersions.NETWORK_PROTOCOL_VERSION, matchId, attackerUnitId, defenderUnitId));
+    }
+
+    public void requestMoveAndAttackUnit(String unitId, List<GridPoint> pathIncludingStart, String defenderUnitId) {
+        send(new CsMoveAndAttackUnit(ProtocolVersions.NETWORK_PROTOCOL_VERSION, matchId, unitId, pathIncludingStart, defenderUnitId));
+    }
+
+    public void requestFactoryBuild(int factoryX, int factoryY, String unitType) {
+        send(new CsFactoryBuild(ProtocolVersions.NETWORK_PROTOCOL_VERSION, matchId, factoryX, factoryY, unitType));
+    }
+
+    public void requestWarmachineBuild(String warmachineUnitId, String unitType) {
+        send(new CsWarmachineBuild(ProtocolVersions.NETWORK_PROTOCOL_VERSION, matchId, warmachineUnitId, unitType));
+    }
+
+    public void requestWarmachineDrill(String warmachineUnitId) {
+        send(new CsWarmachineDrill(ProtocolVersions.NETWORK_PROTOCOL_VERSION, matchId, warmachineUnitId));
+    }
+
+    public void requestEndTurn() {
+        send(new CsEndTurn(ProtocolVersions.NETWORK_PROTOCOL_VERSION, matchId));
+    }
+
+    public void requestSurrender() {
+        send(new CsSurrender(ProtocolVersions.NETWORK_PROTOCOL_VERSION, matchId));
     }
 
     @Override
