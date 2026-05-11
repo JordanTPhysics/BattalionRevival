@@ -44,7 +44,7 @@ export function defaultGameServerOrigin(): string {
   if (typeof process !== "undefined" && process.env.NEXT_PUBLIC_GAME_SERVER_ORIGIN) {
     return process.env.NEXT_PUBLIC_GAME_SERVER_ORIGIN;
   }
-  return "http://localhost:8080";
+  return "https://battalionrevival.onrender.com/";
 }
 
 export interface MatchClientHandlers {

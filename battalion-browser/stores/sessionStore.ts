@@ -38,12 +38,35 @@ function loadPersistedRejoin(): Partial<Pick<SessionState, "gameServerOrigin" | 
   }
 }
 
-const persisted = loadPersistedRejoin();
+/**
+ * Merge rejoin fields from `localStorage` into the store. Run once on the client after mount
+ * (see `SessionStorageHydration`) so SSR and the first hydration pass both use
+ * `defaultGameServerOrigin()` only, then the browser’s saved origin / match / seat apply.
+ *
+ * Note: a saved `gameServerOrigin` in `localStorage` overrides `NEXT_PUBLIC_GAME_SERVER_ORIGIN`
+ * until you change it in the UI or clear site data for this origin.
+ */
+export function hydrateSessionFromBrowserStorage(): void {
+  const p = loadPersistedRejoin();
+  const patch: Partial<Pick<SessionState, "gameServerOrigin" | "matchId" | "seat">> = {};
+  if (typeof p.gameServerOrigin === "string" && p.gameServerOrigin.trim().length > 0) {
+    patch.gameServerOrigin = p.gameServerOrigin.trim();
+  }
+  if (typeof p.matchId === "string") {
+    patch.matchId = p.matchId.trim();
+  }
+  if (typeof p.seat === "number" && Number.isFinite(p.seat)) {
+    patch.seat = Math.max(0, Math.floor(p.seat));
+  }
+  if (Object.keys(patch).length > 0) {
+    useSessionStore.setState(patch);
+  }
+}
 
 export const useSessionStore = create<SessionState>((set) => ({
-  gameServerOrigin: persisted.gameServerOrigin ?? defaultGameServerOrigin(),
-  matchId: persisted.matchId ?? "",
-  seat: typeof persisted.seat === "number" ? persisted.seat : 0,
+  gameServerOrigin: defaultGameServerOrigin(),
+  matchId: "",
+  seat: 0,
   setGameServerOrigin: (gameServerOrigin) => set({ gameServerOrigin }),
   setMatchId: (matchId) => set({ matchId }),
   setSeat: (seat) => set({ seat }),

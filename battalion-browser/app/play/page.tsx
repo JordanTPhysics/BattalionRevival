@@ -5,6 +5,7 @@ import { GameCanvas, type GameInteractionConfig } from "@/components/game/GameCa
 import { GameInfoStrip } from "@/components/game/GameInfoStrip";
 import { ProductionModals } from "@/components/game/ProductionModals";
 import { GameUnitContextMenu } from "@/components/game/GameUnitContextMenu";
+import { defaultGameServerOrigin } from "@/lib/network/matchClient";
 import { useMatchStore, getMatchWebSocketClient } from "@/stores/matchStore";
 import { useSessionStore } from "@/stores/sessionStore";
 import { useUiStore } from "@/stores/uiStore";
@@ -89,6 +90,13 @@ export default function PlayPage() {
                 value={gameServerOrigin}
                 onChange={(e) => setGameServerOrigin(e.target.value)}
               />
+              <button
+                type="button"
+                className="w-fit text-left text-xs text-sky-400/90 underline decoration-sky-800 hover:text-sky-300"
+                onClick={() => setGameServerOrigin(defaultGameServerOrigin())}
+              >
+                Reset to NEXT_PUBLIC_GAME_SERVER_ORIGIN
+              </button>
             </label>
             <div className="flex flex-wrap gap-2">
               <button

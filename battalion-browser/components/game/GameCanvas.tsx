@@ -316,7 +316,42 @@ function buildTilewiseMovePath(snap: MatchSnapshot, unit: UnitSnapshot, from: Gr
   return greedyTaxicabPath(from, to);
 }
 
-type PriorUnitState = { x: number; y: number; health: number; hasMoved: boolean };
+type PriorUnitState = {
+  x: number;
+  y: number;
+  health: number;
+  hasMoved: boolean;
+  ownerSeatIndex: number;
+  unitType: string;
+  cloaked: boolean;
+};
+
+function priorFromUnit(u: UnitSnapshot): PriorUnitState {
+  return {
+    x: u.x,
+    y: u.y,
+    health: u.health,
+    hasMoved: u.hasMoved,
+    ownerSeatIndex: u.ownerSeatIndex,
+    unitType: u.unitType,
+    cloaked: u.cloaked,
+  };
+}
+
+function ghostFromPrior(id: string, pu: PriorUnitState): UnitSnapshot {
+  return {
+    id,
+    unitType: pu.unitType,
+    ownerSeatIndex: pu.ownerSeatIndex,
+    x: pu.x,
+    y: pu.y,
+    health: pu.health,
+    hasMoved: pu.hasMoved,
+    cloaked: pu.cloaked,
+    facing: "EAST",
+    warmachineFunds: null,
+  };
+}
 
 /** One AI / opponent batch step — spawns paint before moves (deterministic {@code unitId}). */
 type OpponentQueuedAction =
@@ -475,6 +510,48 @@ function buildOpponentSequentialPlan(
     }
   }
 
+  /** Lethal kills remove the defender from `snap.units`, so they never appear in `victims`. Infer follow-up attacks. */
+  const goneIds = [...prevById.keys()].filter((id) => !snap.units.some((u) => u.id === id));
+  const claimedGoneFromLethal = new Set<string>();
+
+  for (const gid of goneIds) {
+    if (claimedGoneFromLethal.has(gid)) continue;
+    const gp = prevById.get(gid);
+    if (!gp) continue;
+    const ghost = ghostFromPrior(gid, gp);
+    for (const it of items) {
+      if (it.kind !== "move" || it.postMoveAttackToward) continue;
+      if (!it.u.hasMoved || !oppSeat(it.u.ownerSeatIndex)) continue;
+      const moverAtDest: UnitSnapshot = { ...it.u, x: it.to.x, y: it.to.y };
+      if (attackPairingReachable(snap, moverAtDest, ghost)) {
+        it.postMoveAttackToward = { x: ghost.x, y: ghost.y };
+        claimedGoneFromLethal.add(gid);
+        break;
+      }
+    }
+  }
+
+  for (const gid of goneIds) {
+    if (claimedGoneFromLethal.has(gid)) continue;
+    const gp = prevById.get(gid);
+    if (!gp) continue;
+    const ghost = ghostFromPrior(gid, gp);
+    for (const u of snap.units) {
+      const p = prevById.get(u.id);
+      if (!p || p.x !== u.x || p.y !== u.y || !u.hasMoved || p.hasMoved) {
+        continue;
+      }
+      if (!oppSeat(u.ownerSeatIndex)) continue;
+      if (usedAttackers.has(u.id)) continue;
+      if (attackPairingReachable(snap, u, ghost)) {
+        items.push({ kind: "attack", unitId: u.id, u, toward: { x: ghost.x, y: ghost.y } });
+        usedAttackers.add(u.id);
+        claimedGoneFromLethal.add(gid);
+        break;
+      }
+    }
+  }
+
   if (items.length === 0) {
     return null;
   }
@@ -495,6 +572,31 @@ function buildOpponentSequentialPlan(
   }
   items.sort(compareOpponentQueuedAction);
   return items;
+}
+
+/** Unit ids removed in this snapshot whose death tile is covered by a queued opponent attack — defer SFX until that attack finishes. */
+function collectDeferredExplosionVictimIds(
+  plan: OpponentQueuedAction[],
+  prevById: Map<string, PriorUnitState>,
+  liveUnitIds: Set<string>
+): Set<string> {
+  const out = new Set<string>();
+  const addGoneAtTile = (gx: number, gy: number): void => {
+    for (const [id, p] of prevById) {
+      if (liveUnitIds.has(id)) continue;
+      if (p.x === gx && p.y === gy) {
+        out.add(id);
+      }
+    }
+  };
+  for (const it of plan) {
+    if (it.kind === "attack") {
+      addGoneAtTile(it.toward.x, it.toward.y);
+    } else if (it.kind === "move" && it.postMoveAttackToward) {
+      addGoneAtTile(it.postMoveAttackToward.x, it.postMoveAttackToward.y);
+    }
+  }
+  return out;
 }
 
 const WALK_FRAME_MS = 72;
@@ -744,6 +846,78 @@ export function GameCanvas({ snapshot, className, interaction }: GameCanvasProps
     let sequentialCtx: SequentialRunCtx | null = null;
     let sequentialFollowHolder: Container | null = null;
 
+    const deferredExplosionState: {
+      victimIds: Set<string>;
+      fired: Set<string>;
+      prevTiles: Map<string, PriorUnitState> | null;
+      liveIds: Set<string> | null;
+      highRoot: Container | null;
+    } = {
+      victimIds: new Set(),
+      fired: new Set(),
+      prevTiles: null,
+      liveIds: null,
+      highRoot: null,
+    };
+
+    const triggerDeferredKillExplosionsForTile = (tx: number, ty: number): void => {
+      const st = deferredExplosionState;
+      if (!st.prevTiles || !st.highRoot || !st.liveIds) {
+        return;
+      }
+      for (const [goneId, p] of st.prevTiles) {
+        if (st.liveIds.has(goneId)) continue;
+        if (!st.victimIds.has(goneId) || st.fired.has(goneId)) continue;
+        if (p.x !== tx || p.y !== ty) continue;
+        st.fired.add(goneId);
+        playExplosionSfx();
+        const exh = new Container();
+        exh.x = p.x * TILE_PX;
+        exh.y = p.y * TILE_PX;
+        const eg = new Graphics();
+        exh.addChild(eg);
+        st.highRoot.addChild(exh);
+        unitAnimList.push({
+          kind: "explosion",
+          holder: exh,
+          g: eg,
+          tMs: 0,
+          durationMs: 640,
+          animMs: 0,
+          maxR: TILE_PX * 0.58,
+        });
+      }
+    };
+
+    const flushDeferredKillExplosions = (): void => {
+      const st = deferredExplosionState;
+      if (!st.prevTiles || !st.highRoot) {
+        return;
+      }
+      for (const goneId of st.victimIds) {
+        if (st.fired.has(goneId)) continue;
+        const p = st.prevTiles.get(goneId);
+        if (!p) continue;
+        st.fired.add(goneId);
+        playExplosionSfx();
+        const exh = new Container();
+        exh.x = p.x * TILE_PX;
+        exh.y = p.y * TILE_PX;
+        const eg = new Graphics();
+        exh.addChild(eg);
+        st.highRoot.addChild(exh);
+        unitAnimList.push({
+          kind: "explosion",
+          holder: exh,
+          g: eg,
+          tMs: 0,
+          durationMs: 640,
+          animMs: 0,
+          maxR: TILE_PX * 0.58,
+        });
+      }
+    };
+
     const centerCameraOnHolder = (holder: Container): void => {
       if (!app.renderer) {
         return;
@@ -761,9 +935,10 @@ export function GameCanvas({ snapshot, className, interaction }: GameCanvasProps
         return;
       }
       if (slotIndex >= ctx.items.length) {
+        flushDeferredKillExplosions();
         const full = new Map<string, PriorUnitState>();
         for (const u of ctx.snap.units) {
-          full.set(u.id, { x: u.x, y: u.y, health: u.health, hasMoved: u.hasMoved });
+          full.set(u.id, priorFromUnit(u));
         }
         priorUnitStateRef.current = full;
         sequentialFollowHolder = null;
@@ -800,19 +975,9 @@ export function GameCanvas({ snapshot, className, interaction }: GameCanvasProps
       const info = ctx.holders.get(item.unitId);
       const patchPriorAndContinue = (): void => {
         if (item.kind === "move") {
-          priorUnitStateRef.current.set(item.unitId, {
-            x: item.to.x,
-            y: item.to.y,
-            health: item.u.health,
-            hasMoved: item.u.hasMoved,
-          });
+          priorUnitStateRef.current.set(item.unitId, priorFromUnit({ ...item.u, x: item.to.x, y: item.to.y }));
         } else {
-          priorUnitStateRef.current.set(item.unitId, {
-            x: item.u.x,
-            y: item.u.y,
-            health: item.u.health,
-            hasMoved: item.u.hasMoved,
-          });
+          priorUnitStateRef.current.set(item.unitId, priorFromUnit(item.u));
         }
         runSequentialOpponentSlot(slotIndex + 1);
       };
@@ -851,6 +1016,10 @@ export function GameCanvas({ snapshot, className, interaction }: GameCanvasProps
           return;
         }
         playAttackSfx(item.u.unitType);
+        const afterAttack = (): void => {
+          triggerDeferredKillExplosionsForTile(item.toward.x, item.toward.y);
+          onAdvance();
+        };
         unitAnimList.push({
           kind: "attack",
           holder: info.holder,
@@ -863,7 +1032,7 @@ export function GameCanvas({ snapshot, className, interaction }: GameCanvasProps
           tMs: 0,
           durationMs: 520,
           animMs: 0,
-          onDone: onAdvance,
+          onDone: afterAttack,
         });
         return;
       }
@@ -890,6 +1059,12 @@ export function GameCanvas({ snapshot, className, interaction }: GameCanvasProps
           playMovementSfx(info.stats.unitType);
         }
         const fu = info.followupAttack;
+        const afterMovePathSeq = (): void => {
+          if (item.postMoveAttackToward) {
+            triggerDeferredKillExplosionsForTile(item.postMoveAttackToward.x, item.postMoveAttackToward.y);
+          }
+          onAdvance();
+        };
         unitAnimList.push({
           kind: "movePath",
           holder: info.holder,
@@ -904,7 +1079,7 @@ export function GameCanvas({ snapshot, className, interaction }: GameCanvasProps
           animMs: 0,
           followupAttack: fu ?? undefined,
           chainedAttackUnitType: fu != null ? u.unitType : undefined,
-          onDone: onAdvance,
+          onDone: afterMovePathSeq,
         });
         return;
       }
@@ -925,6 +1100,13 @@ export function GameCanvas({ snapshot, className, interaction }: GameCanvasProps
       const afterLinear = (): void => {
         if (fuLin != null) {
           playAttackSfx(u.unitType);
+          const toward = item.postMoveAttackToward;
+          const afterFollowupAttack = (): void => {
+            if (toward) {
+              triggerDeferredKillExplosionsForTile(toward.x, toward.y);
+            }
+            onAdvance();
+          };
           unitAnimList.push({
             kind: "attack",
             holder: info.holder,
@@ -937,9 +1119,12 @@ export function GameCanvas({ snapshot, className, interaction }: GameCanvasProps
             tMs: 0,
             durationMs: 520,
             animMs: 0,
-            onDone: onAdvance,
+            onDone: afterFollowupAttack,
           });
         } else {
+          if (item.postMoveAttackToward) {
+            triggerDeferredKillExplosionsForTile(item.postMoveAttackToward.x, item.postMoveAttackToward.y);
+          }
           onAdvance();
         }
       };
@@ -1149,7 +1334,7 @@ export function GameCanvas({ snapshot, className, interaction }: GameCanvasProps
       if (!holdPriorPositions) {
         const nextPos = new Map<string, PriorUnitState>();
         for (const u of snap.units) {
-          nextPos.set(u.id, { x: u.x, y: u.y, health: u.health, hasMoved: u.hasMoved });
+          nextPos.set(u.id, priorFromUnit(u));
         }
         priorUnitStateRef.current = nextPos;
       }
@@ -1286,6 +1471,11 @@ export function GameCanvas({ snapshot, className, interaction }: GameCanvasProps
 
       unitAnimList.length = 0;
       sequentialCtx = null;
+      deferredExplosionState.victimIds.clear();
+      deferredExplosionState.fired.clear();
+      deferredExplosionState.prevTiles = null;
+      deferredExplosionState.liveIds = null;
+      deferredExplosionState.highRoot = null;
 
       if (placeholder) {
         app.stage.removeChild(placeholder);
@@ -1338,24 +1528,42 @@ export function GameCanvas({ snapshot, className, interaction }: GameCanvasProps
       const prevPos = priorUnitStateRef.current;
 
       const liveUnitIds = new Set(snap.units.map((u) => u.id));
+      const opponentSeqPlan = buildOpponentSequentialPlan(snap, interactionRef.current ?? null, prevPos);
+      if (opponentSeqPlan && opponentSeqPlan.length > 0) {
+        deferredExplosionState.victimIds = collectDeferredExplosionVictimIds(
+          opponentSeqPlan,
+          prevPos,
+          liveUnitIds
+        );
+      } else {
+        deferredExplosionState.victimIds.clear();
+      }
+      deferredExplosionState.fired.clear();
+      deferredExplosionState.prevTiles = prevPos;
+      deferredExplosionState.liveIds = liveUnitIds;
+      deferredExplosionState.highRoot = highOverlayRoot;
+
       for (const [goneId, p] of prevPos) {
         if (!liveUnitIds.has(goneId)) {
-          playExplosionSfx();
-          const exh = new Container();
-          exh.x = p.x * TILE_PX;
-          exh.y = p.y * TILE_PX;
-          const eg = new Graphics();
-          exh.addChild(eg);
-          highOverlayRoot.addChild(exh);
-          unitAnimList.push({
-            kind: "explosion",
-            holder: exh,
-            g: eg,
-            tMs: 0,
-            durationMs: 640,
-            animMs: 0,
-            maxR: TILE_PX * 0.58,
-          });
+          const deferExplosion = deferredExplosionState.victimIds.has(goneId);
+          if (!deferExplosion) {
+            playExplosionSfx();
+            const exh = new Container();
+            exh.x = p.x * TILE_PX;
+            exh.y = p.y * TILE_PX;
+            const eg = new Graphics();
+            exh.addChild(eg);
+            highOverlayRoot.addChild(exh);
+            unitAnimList.push({
+              kind: "explosion",
+              holder: exh,
+              g: eg,
+              tMs: 0,
+              durationMs: 640,
+              animMs: 0,
+              maxR: TILE_PX * 0.58,
+            });
+          }
         }
       }
 
@@ -1408,7 +1616,6 @@ export function GameCanvas({ snapshot, className, interaction }: GameCanvasProps
         }
       }
 
-      const opponentSeqPlan = buildOpponentSequentialPlan(snap, interactionRef.current ?? null, prevPos);
       const seqByUnitId = opponentSeqPlan
         ? new Map(opponentSeqPlan.map((it) => [it.unitId, it] as const))
         : null;

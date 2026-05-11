@@ -18,12 +18,14 @@ import {
   type LobbyMemberView,
   type MapSummary,
 } from "@/lib/network/lobbyClient";
+import { defaultGameServerOrigin } from "@/lib/network/matchClient";
 import { useMatchStore } from "@/stores/matchStore";
 import { useSessionStore } from "@/stores/sessionStore";
 
 export default function MatchmakingPage() {
   const router = useRouter();
   const gameServerOrigin = useSessionStore((s) => s.gameServerOrigin);
+  const setGameServerOrigin = useSessionStore((s) => s.setGameServerOrigin);
 
   const [lobbies, setLobbies] = useState<LobbyListItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -217,6 +219,10 @@ export default function MatchmakingPage() {
             Server <span className="text-zinc-400">{gameServerOrigin}</span> · room{" "}
             <span className="font-mono text-zinc-400">{activeLobby.lobbyId.slice(0, 8)}…</span>
           </p>
+          <p className="mt-1 text-xs text-zinc-600">
+            To use a different server URL, leave this room first — the lobby list view has the server
+            field.
+          </p>
         </div>
 
         {roomError ? (
@@ -314,6 +320,30 @@ export default function MatchmakingPage() {
           Open lobbies on your server (<span className="text-zinc-400">{gameServerOrigin}</span>).
           Create or join a room (up to 4 players), host picks a map and starts at any time — remaining
           seats are filled by AI, then all players are routed to the game and connected.
+        </p>
+      </div>
+
+      <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
+        <label className="flex flex-col gap-1 text-sm">
+          <span className="text-zinc-500">Game server (HTTP origin)</span>
+          <input
+            className="rounded-md border border-zinc-700 bg-zinc-950 px-3 py-2 text-zinc-100"
+            value={gameServerOrigin}
+            onChange={(e) => setGameServerOrigin(e.target.value)}
+            placeholder={defaultGameServerOrigin()}
+          />
+        </label>
+        <button
+          type="button"
+          className="mt-2 text-left text-xs text-sky-400/90 underline decoration-sky-800 hover:text-sky-300"
+          onClick={() => setGameServerOrigin(defaultGameServerOrigin())}
+        >
+          Reset to NEXT_PUBLIC_GAME_SERVER_ORIGIN (build default)
+        </button>
+        <p className="mt-2 text-xs text-zinc-600">
+          This value is stored in the browser with your match id. Changing only{" "}
+          <code className="rounded bg-zinc-900 px-1 text-zinc-500">.env.local</code> does not replace a
+          saved origin — edit the field above or use reset.
         </p>
       </div>
 
