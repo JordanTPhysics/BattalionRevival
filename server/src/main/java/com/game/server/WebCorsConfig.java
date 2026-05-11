@@ -17,7 +17,7 @@ public class WebCorsConfig {
     @Bean
     public WebMvcConfigurer battalionCorsConfigurer(
         @Value(
-            "${battalion.cors.allowed-origins:http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://127.0.0.1:3000}"
+            "${battalion.cors.allowed-origins:http://localhost:3000,http://127.0.0.1:3000,https://battalionrevival.netlify.app/}"
         ) String allowedOrigins
     ) {
         String[] origins = splitCsv(allowedOrigins);

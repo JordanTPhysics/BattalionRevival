@@ -343,7 +343,9 @@ export default function MatchmakingPage() {
         <p className="mt-2 text-xs text-zinc-600">
           This value is stored in the browser with your match id. Changing only{" "}
           <code className="rounded bg-zinc-900 px-1 text-zinc-500">.env.local</code> does not replace a
-          saved origin — edit the field above or use reset.
+          saved origin — edit the field above or use reset. On an HTTPS site, use an{" "}
+          <code className="text-zinc-500">https://</code> API base and allow this page’s origin in{" "}
+          <code className="text-zinc-500">battalion.cors.allowed-origins</code> on the Java server.
         </p>
       </div>
 

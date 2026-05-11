@@ -2,7 +2,19 @@
  * REST lobby API — browse, create, join, set map (host), start (host).
  */
 
+import {
+  assertBrowserCanCallGameApi,
+  humanizeGameServerFetchFailure,
+} from "@/lib/network/browserApiGuards";
 import { normalizeServerRoot } from "@/lib/network/mapCatalogClient";
+
+async function gameFetch(url: string, hint: string, init?: RequestInit): Promise<Response> {
+  try {
+    return await fetch(url, init);
+  } catch (e) {
+    throw new Error(humanizeGameServerFetchFailure(e, hint));
+  }
+}
 
 export interface LobbyListItem {
   lobbyId: string;
@@ -108,7 +120,8 @@ export async function fetchOpenLobbies(
   serverRoot: string
 ): Promise<LobbyListItem[]> {
   const root = normalizeServerRoot(serverRoot);
-  const res = await fetch(`${root}/api/lobbies`);
+  assertBrowserCanCallGameApi(root);
+  const res = await gameFetch(`${root}/api/lobbies`, "GET /api/lobbies");
   if (!res.ok) {
     throw new Error(`${res.status} listing lobbies`);
   }
@@ -120,7 +133,8 @@ export async function createLobby(
   displayLabel?: string
 ): Promise<CreateLobbyResult> {
   const root = normalizeServerRoot(serverRoot);
-  const res = await fetch(`${root}/api/lobbies`, {
+  assertBrowserCanCallGameApi(root);
+  const res = await gameFetch(`${root}/api/lobbies`, "POST /api/lobbies", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ displayLabel: displayLabel?.trim() || undefined }),
@@ -137,7 +151,8 @@ export async function joinLobby(
   displayLabel?: string
 ): Promise<JoinLobbyResult> {
   const root = normalizeServerRoot(serverRoot);
-  const res = await fetch(`${root}/api/lobbies/${encodeURIComponent(lobbyId)}/join`, {
+  assertBrowserCanCallGameApi(root);
+  const res = await gameFetch(`${root}/api/lobbies/${encodeURIComponent(lobbyId)}/join`, "POST /api/lobbies/.../join", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ displayLabel: displayLabel?.trim() || undefined }),
@@ -154,9 +169,11 @@ export async function fetchLobbyMember(
   playerId: string
 ): Promise<LobbyMemberView> {
   const root = normalizeServerRoot(serverRoot);
+  assertBrowserCanCallGameApi(root);
   const q = new URLSearchParams({ playerId });
-  const res = await fetch(
-    `${root}/api/lobbies/${encodeURIComponent(lobbyId)}?${q}`
+  const res = await gameFetch(
+    `${root}/api/lobbies/${encodeURIComponent(lobbyId)}?${q}`,
+    "GET /api/lobbies/:id"
   );
   if (!res.ok) {
     throw new Error((await res.text()) || `${res.status} lobby state`);
@@ -171,8 +188,10 @@ export async function setLobbyMap(
   mapSlug: string
 ): Promise<void> {
   const root = normalizeServerRoot(serverRoot);
-  const res = await fetch(
+  assertBrowserCanCallGameApi(root);
+  const res = await gameFetch(
     `${root}/api/lobbies/${encodeURIComponent(lobbyId)}/map`,
+    "POST /api/lobbies/.../map",
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -190,8 +209,10 @@ export async function startLobbyMatch(
   playerId: string
 ): Promise<string> {
   const root = normalizeServerRoot(serverRoot);
-  const res = await fetch(
+  assertBrowserCanCallGameApi(root);
+  const res = await gameFetch(
     `${root}/api/lobbies/${encodeURIComponent(lobbyId)}/start`,
+    "POST /api/lobbies/.../start",
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -208,7 +229,8 @@ export async function fetchMapSummaries(
   serverRoot: string
 ): Promise<MapSummary[]> {
   const root = normalizeServerRoot(serverRoot);
-  const res = await fetch(`${root}/api/maps`);
+  assertBrowserCanCallGameApi(root);
+  const res = await gameFetch(`${root}/api/maps`, "GET /api/maps");
   if (!res.ok) {
     throw new Error(`${res.status} listing maps`);
   }
