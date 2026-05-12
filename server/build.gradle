@@ -22,12 +22,18 @@ dependencies {
 
     implementation 'org.springframework.boot:spring-boot-starter-web'
     implementation 'org.springframework.boot:spring-boot-starter-websocket'
+    implementation 'org.springframework.boot:spring-boot-starter-jdbc'
+    implementation 'io.github.cdimascio:dotenv-java:3.0.0'
+    runtimeOnly 'org.postgresql:postgresql'
 
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation 'com.h2database:h2'
 }
 
 tasks.named('test', Test).configure {
     useJUnitPlatform()
+    // Root .env must not override test H2 settings from src/test/resources/application.properties
+    environment 'BATTALION_DOTENV_DISABLED', 'true'
 }
 
 tasks.named('bootRun').configure {

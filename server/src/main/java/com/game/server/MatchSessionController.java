@@ -3,7 +3,7 @@ package com.game.server;
 import com.game.engine.PlayableGameSession;
 import com.game.model.map.GameMap;
 import com.game.server.maps.SharedMapContracts;
-import com.game.server.maps.SharedMapFileStore;
+import com.game.server.maps.SharedMapStore;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -16,7 +16,7 @@ import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
- * Creates authoritative match rooms backed by a shared map file (idempotent for the same {@code matchId}).
+ * Creates authoritative match rooms backed by a shared map from the catalog (idempotent for the same {@code matchId}).
  */
 @RestController
 @RequestMapping("/api/matches")
@@ -28,9 +28,9 @@ public class MatchSessionController {
     }
 
     private final MatchRoomRegistry registry;
-    private final SharedMapFileStore sharedMaps;
+    private final SharedMapStore sharedMaps;
 
-    public MatchSessionController(MatchRoomRegistry registry, SharedMapFileStore sharedMaps) {
+    public MatchSessionController(MatchRoomRegistry registry, SharedMapStore sharedMaps) {
         this.registry = registry;
         this.sharedMaps = sharedMaps;
     }

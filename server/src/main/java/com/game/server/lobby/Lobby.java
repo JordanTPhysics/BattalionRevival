@@ -3,7 +3,7 @@ package com.game.server.lobby;
 import com.game.engine.PlayableGameSession;
 import com.game.model.map.GameMap;
 import com.game.server.MatchRoomRegistry;
-import com.game.server.maps.SharedMapFileStore;
+import com.game.server.maps.SharedMapStore;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -127,7 +127,7 @@ public final class Lobby {
     /**
      * Host-only; creates authoritative room. Returns error code string or null on success.
      */
-    public String start(String playerId, MatchRoomRegistry registry, SharedMapFileStore maps) {
+    public String start(String playerId, MatchRoomRegistry registry, SharedMapStore maps) {
         synchronized (this) {
             if (started) {
                 return null;

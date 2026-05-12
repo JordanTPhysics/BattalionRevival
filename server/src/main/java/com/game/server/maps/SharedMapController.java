@@ -16,7 +16,7 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * User-generated map catalog stored as JSON files under {@link SharedMapFileStore} (see {@code battalion.shared-maps.directory}).
+ * User-generated map catalog stored in PostgreSQL ({@link SharedMapStore}).
  */
 @RestController
 @RequestMapping("/api/maps")
@@ -24,9 +24,9 @@ public class SharedMapController {
 
     private static final int MAX_JSON_CHARS = 512 * 1024;
 
-    private final SharedMapFileStore store;
+    private final SharedMapStore store;
 
-    public SharedMapController(SharedMapFileStore store) {
+    public SharedMapController(SharedMapStore store) {
         this.store = store;
     }
 
@@ -34,7 +34,7 @@ public class SharedMapController {
     }
 
     @GetMapping
-    public List<SharedMapContracts.MapSummary> list() throws IOException {
+    public List<SharedMapContracts.MapSummary> list() {
         return store.listSummaries();
     }
 
@@ -55,7 +55,7 @@ public class SharedMapController {
     }
 
     @PostMapping(consumes = "application/json")
-    public ResponseEntity<String> upload(@RequestBody MapUploadRequest body) throws IOException {
+    public ResponseEntity<String> upload(@RequestBody MapUploadRequest body) {
         if (body == null || body.mapJson() == null || body.mapJson().isBlank()) {
             return ResponseEntity.badRequest().body("mapJson required");
         }

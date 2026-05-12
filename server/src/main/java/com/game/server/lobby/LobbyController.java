@@ -1,7 +1,7 @@
 package com.game.server.lobby;
 
 import com.game.server.MatchRoomRegistry;
-import com.game.server.maps.SharedMapFileStore;
+import com.game.server.maps.SharedMapStore;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -37,9 +37,9 @@ public class LobbyController {
 
     private final LobbyRegistry lobbies;
     private final MatchRoomRegistry matchRooms;
-    private final SharedMapFileStore sharedMaps;
+    private final SharedMapStore sharedMaps;
 
-    public LobbyController(LobbyRegistry lobbies, MatchRoomRegistry matchRooms, SharedMapFileStore sharedMaps) {
+    public LobbyController(LobbyRegistry lobbies, MatchRoomRegistry matchRooms, SharedMapStore sharedMaps) {
         this.lobbies = lobbies;
         this.matchRooms = matchRooms;
         this.sharedMaps = sharedMaps;

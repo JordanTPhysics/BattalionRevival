@@ -100,6 +100,10 @@ src/main/resources/
 
 - **`maps/`** at working directory: JSON maps, optional **`default.json`** for `GameEngine` auto-load.
 
+## Server shared map catalog (`server/`)
+
+- User-uploaded maps for **`GET/POST /api/maps`** and lobby/match slug resolution are stored in **PostgreSQL** (`shared_map` table, **`SharedMapStore`**). Schema: **`server/sql/shared_maps.sql`** (manual) and **`server/src/main/resources/schema.sql`** (optional startup init via **`spring.sql.init.mode`**). Requires **`spring.datasource.*`** (see **`server/src/main/resources/application.properties`**).
+
 ## Tests
 
 - **`game-core/src/test/java`** — JUnit 5 (`build.gradle`); rules tests live with simulation code.

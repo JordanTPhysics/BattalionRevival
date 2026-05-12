@@ -3,8 +3,6 @@ package com.game.server;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.client.WebSocketConnectionManager;
@@ -12,12 +10,9 @@ import org.springframework.web.socket.client.standard.StandardWebSocketClient;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 
 import java.net.URI;
-import java.nio.file.Path;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
-
-import org.junit.jupiter.api.io.TempDir;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -26,17 +21,6 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class MatchWebSocketIT {
-
-    @TempDir
-    static Path sharedMapsDirectory;
-
-    @DynamicPropertySource
-    static void registerSharedMapsPath(DynamicPropertyRegistry registry) {
-        registry.add(
-            "battalion.shared-maps.directory",
-            () -> sharedMapsDirectory.toAbsolutePath().toString()
-        );
-    }
 
     @LocalServerPort
     int port;

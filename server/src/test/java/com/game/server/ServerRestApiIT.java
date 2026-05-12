@@ -14,17 +14,9 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.jdbc.core.JdbcTemplate;
 
-import java.io.IOException;
-import java.io.UncheckedIOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.UUID;
-import java.util.stream.Stream;
-
-import org.junit.jupiter.api.io.TempDir;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -34,36 +26,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class ServerRestApiIT {
 
-    @TempDir
-    static Path sharedMapsDirectory;
-
-    @DynamicPropertySource
-    static void registerSharedMapsPath(DynamicPropertyRegistry registry) {
-        registry.add(
-            "battalion.shared-maps.directory",
-            () -> sharedMapsDirectory.toAbsolutePath().toString()
-        );
-    }
-
     @Autowired
     private TestRestTemplate rest;
 
+    @Autowired
+    private JdbcTemplate jdbc;
+
     @BeforeEach
-    void clearSharedMapsDirectory() {
-        if (!Files.isDirectory(sharedMapsDirectory)) {
-            return;
-        }
-        try (Stream<Path> stream = Files.list(sharedMapsDirectory)) {
-            stream.forEach(p -> {
-                try {
-                    Files.deleteIfExists(p);
-                } catch (IOException e) {
-                    throw new UncheckedIOException(e);
-                }
-            });
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
+    void clearSharedMaps() {
+        SharedMapTestSupport.clearAllMaps(jdbc);
     }
 
     private static String newSlug() {
@@ -137,17 +108,19 @@ class ServerRestApiIT {
     }
 
     @Test
-    void maps_upload_duplicateSlug_returns409() throws Exception {
+    void maps_upload_duplicateSlug_returns409() {
         String slug = newSlug();
-        Path file = sharedMapsDirectory.resolve(slug + ".json");
-        Files.writeString(file, minimalPlainsMapJson());
-
+        String mapJson = minimalPlainsMapJson();
         String uploadJson = """
             {"slug":"%s","ownerUsername":"u","mapJson":%s}
-            """.formatted(slug, escapeJsonString(minimalPlainsMapJson()));
-        ResponseEntity<String> res =
+            """.formatted(slug, escapeJsonString(mapJson));
+        ResponseEntity<String> first =
             rest.postForEntity("/api/maps", jsonBody(uploadJson), String.class);
-        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(first.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+        ResponseEntity<String> second =
+            rest.postForEntity("/api/maps", jsonBody(uploadJson), String.class);
+        assertThat(second.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
     }
 
     @Test
@@ -160,7 +133,7 @@ class ServerRestApiIT {
     @Test
     void matches_ensure_invalidMatchId_returns400() {
         String slug = newSlug();
-        writeMapFile(slug, minimalPlainsMapJson());
+        SharedMapTestSupport.insertMap(jdbc, slug, minimalPlainsMapJson());
         ResponseEntity<String> res = rest.postForEntity(
             "/api/matches",
             jsonBody("{\"matchId\":\"room.one\",\"mapSlug\":\"" + slug + "\"}"),
@@ -172,7 +145,7 @@ class ServerRestApiIT {
     @Test
     void matches_ensure_demoMatchId_returns400() {
         String slug = newSlug();
-        writeMapFile(slug, minimalPlainsMapJson());
+        SharedMapTestSupport.insertMap(jdbc, slug, minimalPlainsMapJson());
         ResponseEntity<String> res = rest.postForEntity(
             "/api/matches",
             jsonBody("{\"matchId\":\"demo\",\"mapSlug\":\"" + slug + "\"}"),
@@ -194,7 +167,7 @@ class ServerRestApiIT {
     @Test
     void matches_ensure_createsThenIdempotent() {
         String slug = newSlug();
-        writeMapFile(slug, minimalPlainsMapJson());
+        SharedMapTestSupport.insertMap(jdbc, slug, minimalPlainsMapJson());
         String matchId = "room-" + newSlug();
 
         ResponseEntity<String> first = rest.postForEntity(
@@ -212,14 +185,6 @@ class ServerRestApiIT {
         );
         assertThat(second.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(second.getBody()).isEqualTo("match already existed");
-    }
-
-    private static void writeMapFile(String slug, String mapJson) {
-        try {
-            Files.writeString(sharedMapsDirectory.resolve(slug + ".json"), mapJson);
-        } catch (Exception e) {
-            throw new RuntimeException(e);
-        }
     }
 
     /** Wrap arbitrary map JSON as a JSON string value (quoted, escaped) for embedding in a request body. */

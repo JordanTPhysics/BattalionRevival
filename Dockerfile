@@ -3,8 +3,8 @@
 # Build (from repo root):
 #   docker build -t battalion-server .
 #
-# Run (mount a volume if you want uploaded maps to survive container removal):
-#   docker run --rm -p 8080:8080 -v battalion-maps:/app/shared-maps battalion-server
+# Run (set SPRING_DATASOURCE_* to Postgres; uploaded maps live in the database, not on local disk):
+#   docker run --rm -p 8080:8080 -e SPRING_DATASOURCE_URL=jdbc:postgresql://host:5432/battalion -e SPRING_DATASOURCE_USERNAME=... -e SPRING_DATASOURCE_PASSWORD=... battalion-server
 
 FROM eclipse-temurin:17-jdk-jammy AS build
 WORKDIR /app

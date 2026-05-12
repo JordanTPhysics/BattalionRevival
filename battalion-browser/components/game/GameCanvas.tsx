@@ -7,6 +7,7 @@ import {
   Container,
   FederatedPointerEvent,
   Graphics,
+  Point,
   Sprite,
   Text,
   Texture,
@@ -387,7 +388,7 @@ type SequentialHolderInfo = {
   };
 };
 
-const SEQUENTIAL_GAP_SAME_SEAT_MOVE_MS = 500;
+const SEQUENTIAL_GAP_SAME_SEAT_MOVE_MS = 100;
 const SEQUENTIAL_GAP_SEAT_CHANGE_MS = 2000;
 
 function opponentActionKindRank(k: OpponentQueuedAction["kind"]): number {
@@ -419,10 +420,7 @@ function sequentialGapMsBetween(prevItem: OpponentQueuedAction | null, curItem: 
   if (prevItem.u.ownerSeatIndex !== curItem.u.ownerSeatIndex) {
     return SEQUENTIAL_GAP_SEAT_CHANGE_MS;
   }
-  if (prevItem.kind === "move" && curItem.kind === "move") {
     return SEQUENTIAL_GAP_SAME_SEAT_MOVE_MS;
-  }
-  return 0;
 }
 
 /**
@@ -1913,6 +1911,23 @@ export function GameCanvas({ snapshot, className, interaction }: GameCanvasProps
       rmbPanCandidate = null;
     };
 
+    const movementPathOverlayUsesHover = (
+      snap: MatchSnapshot,
+      hud: ReturnType<typeof useGameHudStore.getState>,
+      cfg: GameInteractionConfig | null
+    ): boolean => {
+      if (!cfg || snap.matchFinished) return false;
+      const yourCommandTurn = cfg.yourSeatIndex === snap.activePlayerIndex;
+      const selectedUnit = resolveYellowSelectionUnit(snap, hud.mapSelectedGrid);
+      return !!(
+        yourCommandTurn &&
+        selectedUnit &&
+        !selectedUnit.hasMoved &&
+        selectedUnit.ownerSeatIndex === cfg.yourSeatIndex &&
+        hud.movementPath.length >= 2
+      );
+    };
+
     const onHoverMove = (e: FederatedPointerEvent) => {
       if (!world.visible || panDrag || rmbPanCandidate) return;
       const snap = snapshotRef.current;
@@ -1925,11 +1940,16 @@ export function GameCanvas({ snapshot, className, interaction }: GameCanvasProps
       const hx = Math.floor(local.x / TILE_PX);
       const hy = Math.floor(local.y / TILE_PX);
       if (hx < 0 || hy < 0 || hx >= snap.width || hy >= snap.height) {
+        const hadHoverCell = lastHoverGridRef.current !== null;
         lastHoverGridRef.current = null;
-        engineRef.current?.repaintCommandOverlays(snap);
+        if (hadHoverCell && movementPathOverlayUsesHover(snap, hud, cfg ?? null)) {
+          engineRef.current?.repaintCommandOverlays(snap);
+        }
         return;
       }
 
+      const prevCell = lastHoverGridRef.current;
+      const cellChanged = prevCell === null || prevCell.x !== hx || prevCell.y !== hy;
       lastHoverGridRef.current = { x: hx, y: hy };
 
       const selected = resolveYellowSelectionUnit(snap, hud.mapSelectedGrid);
@@ -1941,7 +1961,6 @@ export function GameCanvas({ snapshot, className, interaction }: GameCanvasProps
         selected.ownerSeatIndex === cfg.yourSeatIndex;
 
       if (!canHoverPath) {
-        engineRef.current?.repaintCommandOverlays(snap);
         return;
       }
 
@@ -1953,10 +1972,13 @@ export function GameCanvas({ snapshot, className, interaction }: GameCanvasProps
         { x: hx, y: hy }
       );
 
-      if (!pathsEqual(next, hud.movementPath)) {
+      const pathChanged = !pathsEqual(next, hud.movementPath);
+      if (pathChanged) {
         hud.setMovementPath(next);
       }
-      engineRef.current?.repaintCommandOverlays(snap);
+      if (pathChanged || cellChanged) {
+        engineRef.current?.repaintCommandOverlays(snap);
+      }
     };
 
     const onUp = (e: FederatedPointerEvent) => {
@@ -1967,6 +1989,10 @@ export function GameCanvas({ snapshot, className, interaction }: GameCanvasProps
       pointerDown = null;
 
       if (wasPanning || !world.visible || !down) {
+        return;
+      }
+
+      if (performance.now() < gestureSuppressTapUntil && down.button === 0) {
         return;
       }
 
@@ -2188,6 +2214,82 @@ export function GameCanvas({ snapshot, className, interaction }: GameCanvasProps
       }
     };
 
+    /** After two-finger pan/pinch, ignore the synthetic pointer tap. */
+    let gestureSuppressTapUntil = 0;
+    let pinchState: {
+      lastDist: number;
+      lastMidX: number;
+      lastMidY: number;
+      didMove: boolean;
+    } | null = null;
+
+    const clientToCanvasGlobal = (clientX: number, clientY: number): { x: number; y: number } => {
+      const canvas = app.canvas;
+      const rect = canvas.getBoundingClientRect();
+      const x = (clientX - rect.left) * (canvas.width / rect.width);
+      const y = (clientY - rect.top) * (canvas.height / rect.height);
+      return { x, y };
+    };
+
+    const applyScaleAtGlobal = (nextScale: number, gax: number, gay: number): void => {
+      const clamped = Math.min(3, Math.max(0.25, nextScale));
+      if (Math.abs(clamped - scale) < 1e-4) return;
+      const anchorLocal = world.toLocal(new Point(gax, gay));
+      scale = clamped;
+      world.scale.set(scale);
+      const after = world.toGlobal(anchorLocal);
+      world.position.x += gax - after.x;
+      world.position.y += gay - after.y;
+    };
+
+    const onTouchStart = (ev: TouchEvent): void => {
+      if (ev.touches.length === 2) {
+        ev.preventDefault();
+        const t0 = clientToCanvasGlobal(ev.touches[0]!.clientX, ev.touches[0]!.clientY);
+        const t1 = clientToCanvasGlobal(ev.touches[1]!.clientX, ev.touches[1]!.clientY);
+        const midX = (t0.x + t1.x) / 2;
+        const midY = (t0.y + t1.y) / 2;
+        const dist = Math.hypot(t1.x - t0.x, t1.y - t0.y);
+        pinchState = { lastDist: Math.max(dist, 4), lastMidX: midX, lastMidY: midY, didMove: false };
+      }
+    };
+
+    const onTouchMove = (ev: TouchEvent): void => {
+      if (ev.touches.length < 2 || !app.renderer) return;
+      ev.preventDefault();
+      gestureSuppressTapUntil = performance.now() + 400;
+      const t0 = clientToCanvasGlobal(ev.touches[0]!.clientX, ev.touches[0]!.clientY);
+      const t1 = clientToCanvasGlobal(ev.touches[1]!.clientX, ev.touches[1]!.clientY);
+      const midX = (t0.x + t1.x) / 2;
+      const midY = (t0.y + t1.y) / 2;
+      const dist = Math.hypot(t1.x - t0.x, t1.y - t0.y);
+      if (pinchState === null) {
+        pinchState = { lastDist: Math.max(dist, 4), lastMidX: midX, lastMidY: midY, didMove: false };
+        return;
+      }
+      world.position.x += midX - pinchState.lastMidX;
+      world.position.y += midY - pinchState.lastMidY;
+      if (pinchState.lastDist > 4) {
+        const ratio = dist / pinchState.lastDist;
+        applyScaleAtGlobal(scale * ratio, midX, midY);
+      }
+      pinchState = {
+        lastDist: Math.max(dist, 4),
+        lastMidX: midX,
+        lastMidY: midY,
+        didMove: true,
+      };
+    };
+
+    const onTouchEnd = (ev: TouchEvent): void => {
+      if (ev.touches.length < 2) {
+        if (pinchState?.didMove) {
+          gestureSuppressTapUntil = performance.now() + 280;
+        }
+        pinchState = null;
+      }
+    };
+
     let teardown: (() => void) | null = null;
     let tornDown = false;
 
@@ -2201,6 +2303,10 @@ export function GameCanvas({ snapshot, className, interaction }: GameCanvasProps
         app.stage?.off("pointermove", onPointerMove);
         app.canvas?.removeEventListener("wheel", onWheel);
         app.canvas?.removeEventListener("contextmenu", onContextMenu);
+        app.canvas?.removeEventListener("touchstart", onTouchStart);
+        app.canvas?.removeEventListener("touchmove", onTouchMove);
+        app.canvas?.removeEventListener("touchend", onTouchEnd);
+        app.canvas?.removeEventListener("touchcancel", onTouchEnd);
       } finally {
         app.destroy(true, { children: true, texture: false });
       }
@@ -2245,6 +2351,10 @@ export function GameCanvas({ snapshot, className, interaction }: GameCanvasProps
         app.stage.on("pointermove", onPointerMove);
         app.canvas.addEventListener("wheel", onWheel, { passive: false });
         app.canvas.addEventListener("contextmenu", onContextMenu);
+        app.canvas.addEventListener("touchstart", onTouchStart, { passive: false });
+        app.canvas.addEventListener("touchmove", onTouchMove, { passive: false });
+        app.canvas.addEventListener("touchend", onTouchEnd);
+        app.canvas.addEventListener("touchcancel", onTouchEnd);
       })
       .catch(() => {
         /* init failed */
@@ -2276,5 +2386,10 @@ export function GameCanvas({ snapshot, className, interaction }: GameCanvasProps
     engineRef.current.repaintCommandOverlays(s);
   }, [mapSelectedGrid]);
 
-  return <div ref={hostRef} className={className ?? "min-h-[420px] w-full flex-1 rounded-lg"} />;
+  return (
+    <div
+      ref={hostRef}
+      className={`${className ?? "min-h-[420px] w-full flex-1 rounded-lg"} touch-none`}
+    />
+  );
 }

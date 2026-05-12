@@ -14,52 +14,22 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
-
-import java.io.IOException;
-import java.io.UncheckedIOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.stream.Stream;
-
-import org.junit.jupiter.api.io.TempDir;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class LobbyApiIT {
 
-    @TempDir
-    static Path sharedMapsDirectory;
-
-    @DynamicPropertySource
-    static void registerSharedMapsPath(DynamicPropertyRegistry registry) {
-        registry.add(
-            "battalion.shared-maps.directory",
-            () -> sharedMapsDirectory.toAbsolutePath().toString()
-        );
-    }
-
     @Autowired
     private TestRestTemplate rest;
 
+    @Autowired
+    private JdbcTemplate jdbc;
+
     @BeforeEach
     void clearSharedMaps() {
-        if (!Files.isDirectory(sharedMapsDirectory)) {
-            return;
-        }
-        try (Stream<Path> stream = Files.list(sharedMapsDirectory)) {
-            stream.forEach(p -> {
-                try {
-                    Files.deleteIfExists(p);
-                } catch (IOException e) {
-                    throw new UncheckedIOException(e);
-                }
-            });
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
+        SharedMapTestSupport.clearAllMaps(jdbc);
     }
 
     private static String mapJson10() {
@@ -74,11 +44,7 @@ class LobbyApiIT {
     }
 
     private void writeMap(String slug) {
-        try {
-            Files.writeString(sharedMapsDirectory.resolve(slug + ".json"), mapJson10());
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
+        SharedMapTestSupport.insertMap(jdbc, slug, mapJson10());
     }
 
     @Test

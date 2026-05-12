@@ -17,11 +17,11 @@ Authoritative multiplayer uses a thin binary-over-text protocol (JSON envelopes,
 
 ## Maps API
 
-Shared maps are **JSON files** under the directory `battalion.shared-maps.directory` (default `shared-maps/` next to the server working directory). Each upload stores `<slug>.json` plus `<slug>.meta.json` (owner + schema version). `GET /api/maps` lists slugs; `GET /api/maps/{slug}` returns raw map JSON; `POST /api/maps` validates with `MapJsonPersistence.parse` (size cap in controller). **`POST /api/matches`** with `{ "matchId", "mapSlug" }` creates an authoritative room from a catalog slug (idempotent); **`matchId` must not be `demo`** (reserved for the bootstrapped default skirmish).
+Shared maps (the server-side catalog for uploads and match setup) are stored in **PostgreSQL**, table **`shared_map`**, via **`SharedMapStore`** (`JdbcTemplate`). Each row holds `slug` (unique), `owner_username`, `schema_version`, `map_json` (the same text format as local `maps/*.json`), and `created_at`. DDL for manual setup: **`server/sql/shared_maps.sql`**; the server also ships **`server/src/main/resources/schema.sql`** and runs it on startup when **`spring.sql.init.mode=always`** (override with **`spring.datasource.*`** / env such as **`SPRING_DATASOURCE_URL`** for hosted Postgres). **`GET /api/maps`** lists catalog entries; **`GET /api/maps/{slug}`** returns raw map JSON; **`POST /api/maps`** validates with **`MapJsonPersistence.parse`** (size cap in **`SharedMapController`**). **`POST /api/matches`** with `{ "matchId", "mapSlug" }` creates an authoritative room from a catalog slug (idempotent); **`matchId` must not be `demo`** (reserved for the bootstrapped default skirmish).
 
-## Browser client (`web-client/`)
+## Browser client (`battalion-browser/`)
 
-A **Vite + React + TypeScript** SPA supports lobby/join, Canvas-based play, and a JSON map editor. Configure `VITE_SERVER_ORIGIN` (see `.env.development`) so REST and WebSocket URLs point at the Battalion server.
+A **Next.js + TypeScript** app supports lobby/join, Canvas-based play, and a JSON map editor. Configure **`NEXT_PUBLIC_GAME_SERVER_ORIGIN`** (see **`battalion-browser/.env.local.example`**) so REST and WebSocket URLs point at the Battalion server.
 
 - **Guests**: a stable `guestId` and optional display name are stored in `localStorage`; map uploads set `ownerUsername` from that profile until real auth exists.
 - **REST CORS**: `WebCorsConfig` registers CORS for `/api/**`. Override allowed origins with `battalion.cors.allowed-origins` (comma-separated) in `application.properties`. The default includes `http://localhost:5173` for Vite.
@@ -30,4 +30,4 @@ A **Vite + React + TypeScript** SPA supports lobby/join, Canvas-based play, and 
 
 ## Assets for the web build
 
-Terrain and other PNGs are copied from `game-core/src/main/resources/assets` into `web-client/public/assets` by `npm run copy-assets` (runs before `dev` / `build`).
+Terrain and other PNGs for the browser live under **`battalion-browser/public/assets`**, aligned with **`game-core/src/main/resources/assets`** (see **`battalion-browser/public/assets/README.md`**).
