@@ -2,21 +2,19 @@ import Link from "next/link";
 
 export default function HomePage() {
   return (
-    <div className="flex flex-1 flex-col gap-8">
+    <div className="flex flex-1 flex-col p-4 backdrop-blur-sm bg-zinc-900/50 rounded-xl">
       <div>
-        <h1 className="text-3xl font-semibold tracking-tight text-zinc-100">
+        <h1 className="text-5xl font-semibold text-center text-zinc-100 bg-red-800 p-2 rounded-md">
           Battalion Revival
         </h1>
-        <p className="mt-2 max-w-xl text-zinc-400">
-          Browser client: authentication, matchmaking, and the game view talk to the Java server;
-          the battlefield is drawn on a single WebGL canvas with PixiJS — not DOM tiles.
+        <p className="mt-2 lg:w-3/4 text-zinc-200">
+          A Project to revive and pay homage to the original Battalion Series. A tactical turn-based strategy game where up to 4 teams go head to head with land, sea and air in a battle of strength, tactics and teamplay to emerge victorious!
         </p>
       </div>
-
       <div className="grid gap-4 sm:grid-cols-2">
         <Link
           href="/play"
-          className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-5 transition-colors hover:border-emerald-800/60 hover:bg-zinc-900"
+          className="rounded-xl border border-zinc-800 bg-zinc-900 p-5 transition-colors hover:border-emerald-800/60 hover:bg-zinc-900/50"
         >
           <h2 className="font-medium text-emerald-400">Play</h2>
           <p className="mt-2 text-sm text-zinc-500">
@@ -50,7 +48,7 @@ function Placeholder({
   return (
     <Link
       href={href}
-      className="rounded-xl border border-zinc-800 bg-zinc-900/30 p-5 transition-colors hover:border-zinc-700 hover:bg-zinc-900/50"
+      className="rounded-xl border border-zinc-800 bg-zinc-900 p-5 transition-colors hover:border-zinc-700 hover:bg-zinc-900/50"
     >
       <h2 className="font-medium text-zinc-200">{title}</h2>
       <p className="mt-2 text-sm text-zinc-500">{desc}</p>

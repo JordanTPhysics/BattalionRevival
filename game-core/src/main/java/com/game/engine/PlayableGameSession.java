@@ -3,6 +3,7 @@ package com.game.engine;
 import com.game.model.Player;
 import com.game.model.Position;
 import com.game.model.map.GameMap;
+import com.game.model.map.TerrainType;
 import com.game.model.map.Tile;
 import com.game.model.structures.Structure;
 import com.game.model.structures.StructureType;
@@ -93,7 +94,7 @@ public class PlayableGameSession {
      */
     public static PlayableGameSession fromAuthoritativeSnapshot(MatchSnapshot snapshot) {
         Objects.requireNonNull(snapshot, "snapshot");
-        if (snapshot.schemaVersion() != ProtocolVersions.MATCH_SNAPSHOT_SCHEMA_VERSION) {
+        if (snapshot.schemaVersion() != 2 && snapshot.schemaVersion() != 3) {
             throw new IllegalArgumentException("Unsupported snapshot schema version: " + snapshot.schemaVersion());
         }
         GameMap hydratedMap = SnapshotGameMapBuilder.build(snapshot);
@@ -127,6 +128,16 @@ public class PlayableGameSession {
         factoriesThatProducedThisTurn.clear();
         if (active.isEliminated()) {
             return;
+        }
+        for (Unit u : new ArrayList<>(active.getUnits())) {
+            if (u.isAlive() && u.isRepairing()) {
+                Integer started = u.getFieldRepairStartedRound();
+                if (started != null && turnManager.getRoundNumber() > started) {
+                    int quarter = Math.max(1, u.getMaxHealth() / 4);
+                    u.heal(quarter);
+                    u.setFieldRepairStartedRound(null);
+                }
+            }
         }
         active.resetTurnState();
     }
@@ -237,6 +248,7 @@ public class PlayableGameSession {
             p.setMoney(ps.money());
             p.setEliminated(ps.eliminated());
         }
+        Map<String, Unit> rebuiltById = new HashMap<>();
         for (UnitSnapshot us : snapshot.units()) {
             if (us.ownerSeatIndex() < 0 || us.ownerSeatIndex() >= players.size()) {
                 continue;
@@ -253,24 +265,53 @@ public class PlayableGameSession {
             }
             u.setHasMoved(us.hasMoved());
             u.setCloaked(us.cloaked());
+            if (us.fieldRepairStartedRound() != null) {
+                u.setFieldRepairStartedRound(us.fieldRepairStartedRound());
+            }
             if (ut == UnitType.Warmachine && us.warmachineFunds() != null) {
                 u.setWarmachineFunds(us.warmachineFunds());
             }
-            owner.getUnits().add(u);
-            Tile tile = map.getTile(us.x(), us.y());
-            if (tile != null) {
-                tile.setUnit(u);
-                tile.setUnitSpriteId(ut.name());
+            if (ut.isTransport()
+                && us.originalLandUnitType() != null
+                && !us.originalLandUnitType().isBlank()) {
                 try {
-                    tile.setUnitFacing(FacingDirection.valueOf(us.facing()));
-                } catch (IllegalArgumentException ex) {
-                    tile.setUnitFacing(FacingDirection.EAST);
+                    u.restoreOriginalLandUnitTypeFromSnapshot(UnitType.valueOf(us.originalLandUnitType()));
+                } catch (IllegalArgumentException ignored) {
+                    // ignore unknown enum on snapshot
                 }
-                syncUnitTeamMarkerOnTile(u);
+            }
+            owner.getUnits().add(u);
+            rebuiltById.put(u.getId(), u);
+            boolean embarked = us.embarkedInTransportUnitId() != null && !us.embarkedInTransportUnitId().isBlank();
+            if (!embarked) {
+                Tile tile = map.getTile(us.x(), us.y());
+                if (tile != null) {
+                    tile.setUnit(u);
+                    tile.setUnitSpriteId(ut.name());
+                    try {
+                        tile.setUnitFacing(FacingDirection.valueOf(us.facing()));
+                    } catch (IllegalArgumentException ex) {
+                        tile.setUnitFacing(FacingDirection.EAST);
+                    }
+                    syncUnitTeamMarkerOnTile(u);
+                }
             }
             if (u.hasAbility(UnitAbilities.KINGPIN)) {
                 kingpinEligibleTeams.add(owner);
             }
+        }
+        for (UnitSnapshot us : snapshot.units()) {
+            if (us.embarkedInTransportUnitId() == null || us.embarkedInTransportUnitId().isBlank()) {
+                continue;
+            }
+            Unit cargo = rebuiltById.get(us.id());
+            Unit tr = rebuiltById.get(us.embarkedInTransportUnitId());
+            if (cargo == null || tr == null) {
+                continue;
+            }
+            tr.setEmbarkedPassenger(cargo);
+            cargo.setEmbarkedInTransport(tr);
+            cargo.setPosition(tr.getPosition());
         }
         turnManager.restoreClock(snapshot.roundNumber(), snapshot.activePlayerIndex());
         startTurnForCurrentPlayer();
@@ -309,6 +350,9 @@ public class PlayableGameSession {
         if (attacker == null || attacker.getOwner().isEliminated() || attacker.hasMoved() || !attacker.isAlive()) {
             return false;
         }
+        if (attacker.getEmbarkedInTransport() != null) {
+            return false;
+        }
         return attacker.getAttackPower() > 0 && attacker.getAttackType() != Unit.AttackType.NONE;
     }
 
@@ -317,7 +361,8 @@ public class PlayableGameSession {
             && !unit.getOwner().isEliminated()
             && !unit.hasMoved()
             && unit.isAlive()
-            && unit.getOwner() == getActivePlayer();
+            && unit.getOwner() == getActivePlayer()
+            && unit.getEmbarkedInTransport() == null;
     }
 
     public boolean tryMoveUnit(Unit unit, int destX, int destY) {
@@ -515,6 +560,10 @@ public class PlayableGameSession {
      */
     public void completeAnimatedMove(Unit unit) {
         syncUnitTeamMarkerOnTile(unit);
+        Unit cargo = unit.getEmbarkedPassenger();
+        if (cargo != null && cargo.isAlive()) {
+            cargo.setPosition(unit.getPosition());
+        }
         if (hasPendingDisplacedAllies()) {
             throw new IllegalStateException("Pass-through allies still pending before completeAnimatedMove");
         }
@@ -803,15 +852,149 @@ public class PlayableGameSession {
             return false;
         }
         Tile t = map.getTile(wm.getPosition().getX(), wm.getPosition().getY());
-        return t != null && t.isOreDeposit();
+        if (t == null) {
+            return false;
+        }
+        TerrainType ter = t.getTerrainType();
+        if (ter != null && ter.isDepletedOreDepositTerrain()) {
+            return false;
+        }
+        if (ter != null && ter.isWarmachineDrillableOreTerrain()) {
+            return true;
+        }
+        return t.isOreDeposit();
     }
 
     public boolean tryWarmachineDrill(Unit wm) {
         if (!canWarmachineDrill(wm)) {
             return false;
         }
+        Tile t = map.getTile(wm.getPosition().getX(), wm.getPosition().getY());
+        TerrainType ter = t.getTerrainType();
+        if (ter == TerrainType.ENRICHED_ORE_DEPOSIT_1) {
+            t.setTerrainType(TerrainType.ORE_DEPOSIT_1);
+        } else if (ter == TerrainType.ENRICHED_ORE_DEPOSIT_2) {
+            t.setTerrainType(TerrainType.ORE_DEPOSIT_2);
+        } else if (ter == TerrainType.ORE_DEPOSIT_1) {
+            t.setTerrainType(TerrainType.DEPLETED_ORE_DEPOSIT_1);
+            t.setOreDeposit(false);
+        } else if (ter == TerrainType.ORE_DEPOSIT_2) {
+            t.setTerrainType(TerrainType.DEPLETED_ORE_DEPOSIT_2);
+            t.setOreDeposit(false);
+        } else if (t.isOreDeposit()) {
+            t.setOreDeposit(false);
+        }
         wm.addWarmachineFunds(WARMACHINE_DRILL_INCOME);
         markUnitActionConsumed(wm);
+        return true;
+    }
+
+    public boolean canStartFieldRepair(Unit unit) {
+        if (unit == null || !unit.isAlive() || !isOwnedByActivePlayer(unit)) {
+            return false;
+        }
+        if (unit.hasMoved() || unit.isRepairing()) {
+            return false;
+        }
+        if (unit.getEmbarkedInTransport() != null) {
+            return false;
+        }
+        return unit.getHealth() < unit.getMaxHealth();
+    }
+
+    public boolean tryStartFieldRepair(Unit unit) {
+        if (!canStartFieldRepair(unit)) {
+            return false;
+        }
+        unit.setFieldRepairStartedRound(turnManager.getRoundNumber());
+        markUnitActionConsumed(unit);
+        return true;
+    }
+
+    private static boolean isEligiblePickupPassenger(UnitType transportType, UnitType passengerType) {
+        if (transportType == UnitType.Albatross) {
+            return passengerType.movementKind() == MovementKind.FOOT;
+        }
+        if (transportType == UnitType.Leviathan) {
+            MovementKind k = passengerType.movementKind();
+            return k == MovementKind.FOOT || k == MovementKind.WHEELED || k == MovementKind.TRACKED;
+        }
+        return false;
+    }
+
+    public boolean canTransportPickup(Unit transport, Unit passenger) {
+        if (transport == null || passenger == null || !transport.isAlive() || !passenger.isAlive()) {
+            return false;
+        }
+        if (!isOwnedByActivePlayer(transport) || passenger.getOwner() != transport.getOwner()) {
+            return false;
+        }
+        if (!transport.getUnitType().isTransport()) {
+            return false;
+        }
+        if (passenger.getEmbarkedInTransport() != null || transport.getEmbarkedPassenger() != null) {
+            return false;
+        }
+        if (transport.hasMoved() || passenger.hasMoved()) {
+            return false;
+        }
+        if (!isEligiblePickupPassenger(transport.getUnitType(), passenger.getUnitType())) {
+            return false;
+        }
+        if (transport.getPosition().manhattanDistance(passenger.getPosition()) != 1) {
+            return false;
+        }
+        Tile pTile = map.getTile(passenger.getPosition().getX(), passenger.getPosition().getY());
+        return pTile != null && pTile.getUnit() == passenger;
+    }
+
+    public boolean tryTransportPickup(Unit transport, Unit passenger) {
+        if (!canTransportPickup(transport, passenger)) {
+            return false;
+        }
+        Tile pTile = map.getTile(passenger.getPosition().getX(), passenger.getPosition().getY());
+        movementSystem.clearUnitAndPresentationFromTile(pTile);
+        transport.setEmbarkedPassenger(passenger);
+        passenger.setEmbarkedInTransport(transport);
+        passenger.setPosition(transport.getPosition());
+        markUnitActionConsumed(transport);
+        markUnitActionConsumed(passenger);
+        return true;
+    }
+
+    public boolean canTransportDisembark(Unit transport) {
+        if (transport == null || !transport.isAlive() || !isOwnedByActivePlayer(transport)) {
+            return false;
+        }
+        if (transport.hasMoved()) {
+            return false;
+        }
+        Unit cargo = transport.getEmbarkedPassenger();
+        return cargo != null && cargo.isAlive();
+    }
+
+    public boolean tryTransportDisembark(Unit transport) {
+        if (!canTransportDisembark(transport)) {
+            return false;
+        }
+        Unit cargo = transport.getEmbarkedPassenger();
+        Point spawn = FactorySpawn.findSpawn(
+            map,
+            transport.getPosition().getX(),
+            transport.getPosition().getY(),
+            cargo.getUnitType(),
+            4
+        );
+        if (spawn == null) {
+            return false;
+        }
+        cargo.setEmbarkedInTransport(null);
+        transport.setEmbarkedPassenger(null);
+        cargo.setPosition(new Position(spawn.x, spawn.y));
+        movementSystem.relocateUnitWithSprite(map, cargo, spawn.x, spawn.y);
+        syncUnitTeamMarkerOnTile(cargo);
+        markUnitActionConsumed(transport);
+        markUnitActionConsumed(cargo);
         return true;
     }
 
@@ -899,6 +1082,11 @@ public class PlayableGameSession {
     }
 
     private void applyTransportConversion(Unit unit, UnitType target) {
+        unit.setEmbarkedPassenger(null);
+        if (unit.getEmbarkedInTransport() != null) {
+            unit.getEmbarkedInTransport().setEmbarkedPassenger(null);
+            unit.setEmbarkedInTransport(null);
+        }
         unit.convertToTransport(target);
         Tile tile = map.getTile(unit.getPosition().getX(), unit.getPosition().getY());
         if (tile != null) {
@@ -1042,12 +1230,13 @@ public class PlayableGameSession {
             return false;
         }
         orientUnitTowardTarget(attacker, defender);
+        boolean defenderWasRepairingAtStrikeStart = defender.isRepairing();
         if (trackerDiscoveryFirstStrike) {
             combatSystem.outgoingDiscoveryStrike(attacker, defender, map);
         } else {
             combatSystem.outgoingStrike(attacker, defender, map);
         }
-        if (combatSystem.defenderCanCounterattack(defender, attacker, map)) {
+        if (!defenderWasRepairingAtStrikeStart && combatSystem.defenderCanCounterattack(defender, attacker, map)) {
             orientUnitTowardTarget(defender, attacker);
             combatSystem.counterStrike(defender, attacker, map);
         }
@@ -1058,6 +1247,31 @@ public class PlayableGameSession {
     private void cleanupDeadUnit(Unit unit) {
         if (unit == null || unit.isAlive()) {
             return;
+        }
+        Unit cargo = unit.getEmbarkedPassenger();
+        if (cargo != null && cargo.isAlive()) {
+            unit.setEmbarkedPassenger(null);
+            cargo.setEmbarkedInTransport(null);
+            Point spawn = FactorySpawn.findSpawn(
+                map,
+                unit.getPosition().getX(),
+                unit.getPosition().getY(),
+                cargo.getUnitType(),
+                6
+            );
+            if (spawn != null) {
+                cargo.setPosition(new Position(spawn.x, spawn.y));
+                movementSystem.relocateUnitWithSprite(map, cargo, spawn.x, spawn.y);
+                syncUnitTeamMarkerOnTile(cargo);
+            } else {
+                cargo.applyDamage(cargo.getHealth());
+                cleanupDeadUnit(cargo);
+            }
+        }
+        Unit host = unit.getEmbarkedInTransport();
+        if (host != null) {
+            host.setEmbarkedPassenger(null);
+            unit.setEmbarkedInTransport(null);
         }
         unit.getOwner().getUnits().remove(unit);
         int x = unit.getPosition().getX();
@@ -1270,6 +1484,18 @@ public class PlayableGameSession {
     private void forciblyRemoveUnitFromMap(Unit unit) {
         if (unit == null) {
             return;
+        }
+        Unit cargo = unit.getEmbarkedPassenger();
+        if (cargo != null) {
+            unit.setEmbarkedPassenger(null);
+            cargo.setEmbarkedInTransport(null);
+            cargo.applyDamage(cargo.getHealth());
+            cleanupDeadUnit(cargo);
+        }
+        Unit host = unit.getEmbarkedInTransport();
+        if (host != null) {
+            host.setEmbarkedPassenger(null);
+            unit.setEmbarkedInTransport(null);
         }
         unit.getOwner().getUnits().remove(unit);
         int x = unit.getPosition().getX();

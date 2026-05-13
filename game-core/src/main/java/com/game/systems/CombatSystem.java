@@ -26,7 +26,7 @@ public class CombatSystem {
     /** Main strike: defender takes damage (counter not applied). */
     public void outgoingStrike(Unit attacker, Unit defender, GameMap map) {
         int outgoingDamage = calculateDamage(attacker, defender, DamageStrikeKind.OUTGOING_INITIATOR, map);
-        applyDamageWithStalwart(defender, outgoingDamage);
+        applyDamageInterruptingRepair(defender, outgoingDamage);
         if (attacker.hasAbility(UnitAbilities.CLOAKER)) {
             attacker.setCloaked(false);
         }
@@ -40,7 +40,7 @@ public class CombatSystem {
      */
     public void outgoingDiscoveryStrike(Unit attacker, Unit defender, GameMap map) {
         int outgoingDamage = calculateDamage(attacker, defender, DamageStrikeKind.OUTGOING_DISCOVERY_INITIATOR, map);
-        applyDamageWithStalwart(defender, outgoingDamage);
+        applyDamageInterruptingRepair(defender, outgoingDamage);
         if (attacker.hasAbility(UnitAbilities.CLOAKER)) {
             attacker.setCloaked(false);
         }
@@ -142,9 +142,25 @@ public class CombatSystem {
         Unit behindDefender = behindTile != null ? behindTile.getUnit() : null;
         if (behindDefender != null && behindDefender.isAlive()) {
             int pierce = (int) Math.round(outgoingDamage * 0.6);
-            applyDamageWithStalwart(behindDefender, pierce);
+            applyDamageInterruptingRepair(behindDefender, pierce);
             behindDefender.setCloaked(false);
         }
+    }
+
+    /**
+     * Incoming damage to a unit that committed field repair: +20% and repair is cancelled.
+     * Counterattacks use {@link #applyDamageWithStalwart} directly (no repair vulnerability).
+     */
+    private void applyDamageInterruptingRepair(Unit target, int incomingDamage) {
+        if (target == null || incomingDamage <= 0 || !target.isAlive()) {
+            return;
+        }
+        int dmg = incomingDamage;
+        if (target.isRepairing()) {
+            dmg = (int) Math.round(incomingDamage * 1.2);
+            target.setFieldRepairStartedRound(null);
+        }
+        applyDamageWithStalwart(target, dmg);
     }
 
     /**

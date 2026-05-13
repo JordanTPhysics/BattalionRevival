@@ -179,6 +179,8 @@ export function EditorBoardCanvas({ className }: EditorBoardCanvasProps) {
     panRootRef.current = panRoot;
 
     let destroyed = false;
+    /** After two-finger pan/pinch, skip one paint from the lifted pointer. */
+    let gestureSuppressTapUntil = 0;
 
     const wheel = (ev: WheelEvent) => {
       if (!host.contains(ev.target as Node)) return;
@@ -205,6 +207,9 @@ export function EditorBoardCanvas({ className }: EditorBoardCanvasProps) {
 
     const onDown = (e: FederatedPointerEvent) => {
       host.focus({ preventScroll: true });
+      if (e.button === 0 && performance.now() < gestureSuppressTapUntil) {
+        return;
+      }
       if (spaceHeld.current && e.button === 0) {
         panDragging.current = true;
         lastPan.current = { x: e.global.x, y: e.global.y };
@@ -338,6 +343,85 @@ export function EditorBoardCanvas({ className }: EditorBoardCanvasProps) {
           app.destroy(true, { children: true, texture: false });
           return;
         }
+        let pinchState: {
+          lastDist: number;
+          lastMidX: number;
+          lastMidY: number;
+          didMove: boolean;
+        } | null = null;
+        let pinchZoomAccumulator = 0;
+        const PINCH_ZOOM_LOG_THRESHOLD = 0.1;
+
+        const clientToCanvasGlobal = (clientX: number, clientY: number): { x: number; y: number } => {
+          const canvas = app.canvas;
+          const rect = canvas.getBoundingClientRect();
+          const x = (clientX - rect.left) * (canvas.width / rect.width);
+          const y = (clientY - rect.top) * (canvas.height / rect.height);
+          return { x, y };
+        };
+
+        const onTouchStart = (ev: TouchEvent): void => {
+          if (ev.touches.length === 2) {
+            ev.preventDefault();
+            const t0 = clientToCanvasGlobal(ev.touches[0]!.clientX, ev.touches[0]!.clientY);
+            const t1 = clientToCanvasGlobal(ev.touches[1]!.clientX, ev.touches[1]!.clientY);
+            const midX = (t0.x + t1.x) / 2;
+            const midY = (t0.y + t1.y) / 2;
+            const dist = Math.hypot(t1.x - t0.x, t1.y - t0.y);
+            pinchState = { lastDist: Math.max(dist, 4), lastMidX: midX, lastMidY: midY, didMove: false };
+            pinchZoomAccumulator = 0;
+          }
+        };
+
+        const onTouchMove = (ev: TouchEvent): void => {
+          if (ev.touches.length < 2 || !app.renderer) return;
+          ev.preventDefault();
+          gestureSuppressTapUntil = performance.now() + 400;
+          const t0 = clientToCanvasGlobal(ev.touches[0]!.clientX, ev.touches[0]!.clientY);
+          const t1 = clientToCanvasGlobal(ev.touches[1]!.clientX, ev.touches[1]!.clientY);
+          const midX = (t0.x + t1.x) / 2;
+          const midY = (t0.y + t1.y) / 2;
+          const dist = Math.hypot(t1.x - t0.x, t1.y - t0.y);
+          if (pinchState === null) {
+            pinchState = { lastDist: Math.max(dist, 4), lastMidX: midX, lastMidY: midY, didMove: false };
+            return;
+          }
+          const st = useEditorStore.getState();
+          st.panBy(midX - pinchState.lastMidX, midY - pinchState.lastMidY);
+          if (pinchState.lastDist > 4) {
+            const ratio = dist / pinchState.lastDist;
+            pinchZoomAccumulator += Math.log(ratio);
+            while (pinchZoomAccumulator > PINCH_ZOOM_LOG_THRESHOLD) {
+              const before = useEditorStore.getState().tileSize;
+              useEditorStore.getState().zoomIn();
+              pinchZoomAccumulator -= PINCH_ZOOM_LOG_THRESHOLD;
+              if (useEditorStore.getState().tileSize === before) break;
+            }
+            while (pinchZoomAccumulator < -PINCH_ZOOM_LOG_THRESHOLD) {
+              const before = useEditorStore.getState().tileSize;
+              useEditorStore.getState().zoomOut();
+              pinchZoomAccumulator += PINCH_ZOOM_LOG_THRESHOLD;
+              if (useEditorStore.getState().tileSize === before) break;
+            }
+          }
+          pinchState = {
+            lastDist: Math.max(dist, 4),
+            lastMidX: midX,
+            lastMidY: midY,
+            didMove: true,
+          };
+        };
+
+        const onTouchEnd = (ev: TouchEvent): void => {
+          if (ev.touches.length < 2) {
+            if (pinchState?.didMove) {
+              gestureSuppressTapUntil = performance.now() + 280;
+            }
+            pinchState = null;
+            pinchZoomAccumulator = 0;
+          }
+        };
+
         teardown = () => {
           try {
             app.stage.off("pointerdown", onDown);
@@ -345,6 +429,10 @@ export function EditorBoardCanvas({ className }: EditorBoardCanvasProps) {
             app.stage.off("pointerupoutside", onUp);
             app.stage.off("pointercancel", onCancel);
             app.stage.off("pointermove", onMove);
+            app.canvas.removeEventListener("touchstart", onTouchStart);
+            app.canvas.removeEventListener("touchmove", onTouchMove);
+            app.canvas.removeEventListener("touchend", onTouchEnd);
+            app.canvas.removeEventListener("touchcancel", onTouchEnd);
           } finally {
             app.destroy(true, { children: true, texture: false });
           }
@@ -360,6 +448,11 @@ export function EditorBoardCanvas({ className }: EditorBoardCanvasProps) {
         app.stage.on("pointerupoutside", onUp);
         app.stage.on("pointercancel", onCancel);
         app.stage.on("pointermove", onMove);
+
+        app.canvas.addEventListener("touchstart", onTouchStart, { passive: false });
+        app.canvas.addEventListener("touchmove", onTouchMove, { passive: false });
+        app.canvas.addEventListener("touchend", onTouchEnd);
+        app.canvas.addEventListener("touchcancel", onTouchEnd);
 
         appReadyRef.current = true;
         panRoot.position.set(useEditorStore.getState().pan.x, useEditorStore.getState().pan.y);
@@ -456,7 +549,10 @@ export function EditorBoardCanvas({ className }: EditorBoardCanvasProps) {
           if (tile.structure != null) {
             const structureFillRgb = structureTintRgb(tile.structureTeam);
             const uncStUrl = uncolouredStructureTextureUrl(tile.structure);
-            const maskedSt = await getUncolouredFullImageTeamTexture(uncStUrl, structureFillRgb);
+            const maskedSt = await getUncolouredFullImageTeamTexture(uncStUrl, {
+              kind: "solid",
+              rgb: structureFillRgb,
+            });
             let useLegacyStructureTint = false;
             let stTex: Texture;
             if (maskedSt) {
@@ -498,7 +594,10 @@ export function EditorBoardCanvas({ className }: EditorBoardCanvasProps) {
           if (tile.unitSprite != null) {
             const unitFillRgb = spriteTintUnit(tile.unitTeam);
             const uncUrl = uncolouredUnitTextureUrl(tile.unitSprite);
-            const maskedUnit = await getUncolouredEastFrameTeamTexture(uncUrl, unitFillRgb);
+            const maskedUnit = await getUncolouredEastFrameTeamTexture(uncUrl, {
+              kind: "solid",
+              rgb: unitFillRgb,
+            });
             let useLegacyUnitTint = false;
             let uTex: Texture;
             if (maskedUnit) {
@@ -586,7 +685,7 @@ export function EditorBoardCanvas({ className }: EditorBoardCanvasProps) {
       tabIndex={0}
       role="application"
       aria-label="Map editor canvas"
-      className={`relative flex min-h-[520px] min-w-0 flex-1 outline-none ring-1 ring-zinc-800 ${className ?? ""}`}
+      className={`relative flex min-h-[520px] min-w-0 flex-1 touch-none outline-none ring-1 ring-zinc-800 ${className ?? ""}`}
       onContextMenu={(e) => e.preventDefault()}
     />
   );

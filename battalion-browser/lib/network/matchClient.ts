@@ -2,13 +2,20 @@ import { NETWORK_PROTOCOL_VERSION } from "@/lib/protocol/constants";
 import {
   isNetEnvelope,
   type CsAttackUnit,
+  type CsConvertToAlbatross,
+  type CsConvertToLeviathan,
   type CsEndTurn,
   type CsFactoryBuild,
   type CsMoveUnit,
   type CsMoveAndAttackUnit,
   type CsPing,
+  type CsRevertTransport,
   type CsSurrender,
+  type CsTransportDisembark,
+  type CsTransportPickup,
+  type CsUnitRepair,
   type CsWarmachineBuild,
+  type CsWarmachineDrill,
   type MatchSnapshot,
   type NetEnvelope,
   type ScCommandResult,
@@ -190,6 +197,78 @@ export class MatchWebSocketClient {
     };
     return this.send(payload);
   }
+
+  warmachineDrill(cmd: Omit<CsWarmachineDrill, "kind" | "protocolVersion">): boolean {
+    const payload: CsWarmachineDrill = {
+      kind: "CS_WARMACHINE_DRILL",
+      protocolVersion: NETWORK_PROTOCOL_VERSION,
+      matchId: cmd.matchId,
+      warmachineUnitId: cmd.warmachineUnitId,
+    };
+    return this.send(payload);
+  }
+
+  unitRepair(cmd: Omit<CsUnitRepair, "kind" | "protocolVersion">): boolean {
+    const payload: CsUnitRepair = {
+      kind: "CS_UNIT_REPAIR",
+      protocolVersion: NETWORK_PROTOCOL_VERSION,
+      matchId: cmd.matchId,
+      unitId: cmd.unitId,
+    };
+    return this.send(payload);
+  }
+
+  transportPickup(cmd: Omit<CsTransportPickup, "kind" | "protocolVersion">): boolean {
+    const payload: CsTransportPickup = {
+      kind: "CS_TRANSPORT_PICKUP",
+      protocolVersion: NETWORK_PROTOCOL_VERSION,
+      matchId: cmd.matchId,
+      transportUnitId: cmd.transportUnitId,
+      passengerUnitId: cmd.passengerUnitId,
+    };
+    return this.send(payload);
+  }
+
+  transportDisembark(cmd: Omit<CsTransportDisembark, "kind" | "protocolVersion">): boolean {
+    const payload: CsTransportDisembark = {
+      kind: "CS_TRANSPORT_DISEMBARK",
+      protocolVersion: NETWORK_PROTOCOL_VERSION,
+      matchId: cmd.matchId,
+      transportUnitId: cmd.transportUnitId,
+    };
+    return this.send(payload);
+  }
+
+  convertToAlbatross(cmd: Omit<CsConvertToAlbatross, "kind" | "protocolVersion">): boolean {
+    const payload: CsConvertToAlbatross = {
+      kind: "CS_CONVERT_TO_ALBATROSS",
+      protocolVersion: NETWORK_PROTOCOL_VERSION,
+      matchId: cmd.matchId,
+      unitId: cmd.unitId,
+    };
+    return this.send(payload);
+  }
+
+  convertToLeviathan(cmd: Omit<CsConvertToLeviathan, "kind" | "protocolVersion">): boolean {
+    const payload: CsConvertToLeviathan = {
+      kind: "CS_CONVERT_TO_LEVIATHAN",
+      protocolVersion: NETWORK_PROTOCOL_VERSION,
+      matchId: cmd.matchId,
+      unitId: cmd.unitId,
+    };
+    return this.send(payload);
+  }
+
+  revertTransport(cmd: Omit<CsRevertTransport, "kind" | "protocolVersion">): boolean {
+    const payload: CsRevertTransport = {
+      kind: "CS_REVERT_TRANSPORT",
+      protocolVersion: NETWORK_PROTOCOL_VERSION,
+      matchId: cmd.matchId,
+      unitId: cmd.unitId,
+    };
+    return this.send(payload);
+  }
+
   endTurn(matchId: string): boolean {
     const payload: CsEndTurn = {
       kind: "CS_END_TURN",

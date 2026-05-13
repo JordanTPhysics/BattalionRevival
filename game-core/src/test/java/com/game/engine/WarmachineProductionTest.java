@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test;
 import java.awt.Point;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -90,6 +91,61 @@ class WarmachineProductionTest {
         assertTrue(session.tryWarmachineDrill(wm));
         assertEquals(100 + PlayableGameSession.WARMACHINE_DRILL_INCOME, wm.getWarmachineFunds());
         assertTrue(wm.hasMoved());
+        assertFalse(t.isOreDeposit());
+    }
+
+    @Test
+    void drillOnRegularOreTerrainBecomesDepletedAndClearsOreFlag() {
+        GameMap map = new GameMap(20, 15);
+        for (int y = 0; y < 15; y++) {
+            for (int x = 0; x < 20; x++) {
+                map.setTile(x, y, new Tile(TerrainType.PLAINS_1));
+            }
+        }
+        PlayableGameSession session = new PlayableGameSession(map);
+        Player active = session.getActivePlayer();
+        Unit wm = new Unit(UnitType.Warmachine, active, new Position(5, 5));
+        wm.setWarmachineFunds(0);
+        active.getUnits().add(wm);
+        Tile t = map.getTile(5, 5);
+        t.setTerrainType(TerrainType.ORE_DEPOSIT_1);
+        t.setOreDeposit(true);
+        t.setUnit(wm);
+        session.syncUnitTeamMarkerOnTile(wm);
+        assertTrue(session.tryWarmachineDrill(wm));
+        assertEquals(TerrainType.DEPLETED_ORE_DEPOSIT_1, t.getTerrainType());
+        assertFalse(t.isOreDeposit());
+        assertFalse(session.canWarmachineDrill(wm));
+    }
+
+    @Test
+    void drillOnEnrichedOreTwiceThenDepleted() {
+        GameMap map = new GameMap(20, 15);
+        for (int y = 0; y < 15; y++) {
+            for (int x = 0; x < 20; x++) {
+                map.setTile(x, y, new Tile(TerrainType.PLAINS_1));
+            }
+        }
+        PlayableGameSession session = new PlayableGameSession(map);
+        Player active = session.getActivePlayer();
+        Unit wm = new Unit(UnitType.Warmachine, active, new Position(3, 3));
+        active.getUnits().add(wm);
+        Tile t = map.getTile(3, 3);
+        t.setTerrainType(TerrainType.ENRICHED_ORE_DEPOSIT_2);
+        t.setOreDeposit(true);
+        t.setUnit(wm);
+        session.syncUnitTeamMarkerOnTile(wm);
+        assertTrue(session.tryWarmachineDrill(wm));
+        assertEquals(TerrainType.ORE_DEPOSIT_2, t.getTerrainType());
+        assertTrue(t.isOreDeposit());
+        session.endTurn();
+        session.endTurn();
+        assertFalse(wm.hasMoved());
+        assertTrue(session.canWarmachineDrill(wm));
+        assertTrue(session.tryWarmachineDrill(wm));
+        assertEquals(TerrainType.DEPLETED_ORE_DEPOSIT_2, t.getTerrainType());
+        assertFalse(t.isOreDeposit());
+        assertFalse(session.canWarmachineDrill(wm));
     }
 
     private static void placeBlockingUnit(GameMap map, int x, int y) {

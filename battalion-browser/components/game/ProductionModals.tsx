@@ -11,9 +11,12 @@ import {
 } from "@/lib/game/snapshotStructure";
 import { uncolouredUnitTextureUrl } from "@/lib/game/renderPaths";
 import { getMovementSheetFirstFrameDataUrl } from "@/lib/game/unitSheetFrames";
-import { unitRgbFromOwnerSeat } from "@/lib/game/swingTeamColors";
+import { resolveUnitTeamPaintStyle } from "@/lib/game/swingTeamColors";
+import type { TeamPaintStyle } from "@/lib/game/teamPaintStyle";
+import { teamPaintStyleCacheKey } from "@/lib/game/teamPaintStyle";
 import { factoryBuildPrice, factoryPurchasableUnitTypes, getUnitTypeStats, isWarmachineProducibleType } from "@/lib/game/unitTypeCatalog";
 import { getMatchWebSocketClient } from "@/stores/matchStore";
+import { usePlayerUnitAppearanceStore } from "@/stores/playerUnitAppearanceStore";
 import { useGameHudStore } from "@/stores/gameHudStore";
 import { useMatchStore } from "@/stores/matchStore";
 
@@ -35,13 +38,14 @@ function sortedTypes(types: readonly string[]): string[] {
 }
 
 /** Crop + team-tint first EAST walk frame from the movement sheet (matches in-map decode). */
-function MovementSheetUnitThumb({ unitType, teamRgb }: { unitType: string; teamRgb: number }) {
+function MovementSheetUnitThumb({ unitType, paint }: { unitType: string; paint: TeamPaintStyle }) {
   const fallbackSrc = uncolouredUnitTextureUrl(unitType);
   const [decodedSrc, setDecodedSrc] = useState<string | null>(null);
+  const paintKey = teamPaintStyleCacheKey(paint);
 
   useEffect(() => {
     let cancelled = false;
-    void getMovementSheetFirstFrameDataUrl(unitType, teamRgb).then((dataUrl) => {
+    void getMovementSheetFirstFrameDataUrl(unitType, paint).then((dataUrl) => {
       if (!cancelled && dataUrl) {
         setDecodedSrc(dataUrl);
       }
@@ -49,7 +53,8 @@ function MovementSheetUnitThumb({ unitType, teamRgb }: { unitType: string; teamR
     return () => {
       cancelled = true;
     };
-  }, [unitType, teamRgb]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `paintKey` encodes `paint` for decode
+  }, [unitType, paintKey]);
 
   return (
     <img
@@ -81,6 +86,7 @@ export function ProductionModals() {
   const closeProductionModal = useGameHudStore((s) => s.closeProductionModal);
   const snapshot = useMatchStore((s) => s.snapshot);
   const welcome = useMatchStore((s) => s.welcome);
+  const paintStyle = usePlayerUnitAppearanceStore((s) => s.paintStyle);
 
   useEffect(() => {
     if (!productionModal) return;
@@ -111,7 +117,7 @@ export function ProductionModals() {
       const playerName =
         snapshot.players.find((p) => p.seatIndex === activeSeat)?.displayName?.toUpperCase() ?? `SEAT ${activeSeat}`;
       const roster = sortedTypes(factoryPurchasableUnitTypes());
-      const rosterTeamRgb = unitRgbFromOwnerSeat(activeSeat);
+      const rosterTeamPaint = resolveUnitTeamPaintStyle(activeSeat, seat, paintStyle);
       const byCat = { LAND: [] as string[], SEA: [] as string[], AIR: [] as string[] };
       for (const ut of roster) {
         const c = getUnitTypeStats(ut)?.factoryBuildCategory;
@@ -175,7 +181,11 @@ export function ProductionModals() {
                     background: "#222C28",
                   }}
                 >
-                  <MovementSheetUnitThumb key={`${ut}-${rosterTeamRgb}`} unitType={ut} teamRgb={rosterTeamRgb} />
+                  <MovementSheetUnitThumb
+                    key={`${ut}-${teamPaintStyleCacheKey(rosterTeamPaint)}`}
+                    unitType={ut}
+                    paint={rosterTeamPaint}
+                  />
                   <span className="text-center font-bold leading-tight">{niceUnitName(ut)}</span>
                   <span style={{ color: affordable ? ACCENT_PRICE : DANGER }}>${price}</span>
                 </button>
@@ -250,7 +260,7 @@ export function ProductionModals() {
     if (wmUnit.ownerSeatIndex !== activeSeat || wmUnit.hasMoved) return null;
 
     const purse = wmUnit.warmachineFunds ?? 0;
-    const wmRosterTeamRgb = unitRgbFromOwnerSeat(activeSeat);
+    const wmRosterTeamPaint = resolveUnitTeamPaintStyle(activeSeat, seat, paintStyle);
     const mx = wmUnit.x;
     const my = wmUnit.y;
     const playerName =
@@ -317,7 +327,11 @@ export function ProductionModals() {
                   background: "#222C28",
                 }}
               >
-                <MovementSheetUnitThumb key={`${ut}-${wmRosterTeamRgb}`} unitType={ut} teamRgb={wmRosterTeamRgb} />
+                <MovementSheetUnitThumb
+                  key={`${ut}-${teamPaintStyleCacheKey(wmRosterTeamPaint)}`}
+                  unitType={ut}
+                  paint={wmRosterTeamPaint}
+                />
                 <span className="text-center font-bold leading-tight">{niceUnitName(ut)}</span>
                 <span style={{ color: affordable ? ACCENT_PRICE : DANGER }}>${price}</span>
               </button>
@@ -383,7 +397,7 @@ export function ProductionModals() {
         </div>
       </>
     );
-  }, [productionModal, snapshot, welcome, closeProductionModal]);
+  }, [productionModal, snapshot, welcome, closeProductionModal, paintStyle]);
 
   if (!productionModal || !content) return null;
 

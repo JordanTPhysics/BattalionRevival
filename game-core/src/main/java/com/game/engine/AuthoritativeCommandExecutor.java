@@ -4,11 +4,17 @@ import com.game.model.Player;
 import com.game.model.units.Unit;
 import com.game.model.units.UnitType;
 import com.game.network.protocol.CsAttackUnit;
+import com.game.network.protocol.CsConvertToAlbatross;
+import com.game.network.protocol.CsConvertToLeviathan;
 import com.game.network.protocol.CsMoveAndAttackUnit;
 import com.game.network.protocol.CsEndTurn;
 import com.game.network.protocol.CsFactoryBuild;
 import com.game.network.protocol.CsMoveUnit;
+import com.game.network.protocol.CsRevertTransport;
 import com.game.network.protocol.CsSurrender;
+import com.game.network.protocol.CsTransportDisembark;
+import com.game.network.protocol.CsTransportPickup;
+import com.game.network.protocol.CsUnitRepair;
 import com.game.network.protocol.CsWarmachineBuild;
 import com.game.network.protocol.CsWarmachineDrill;
 import com.game.network.protocol.GridPoint;
@@ -68,6 +74,24 @@ public final class AuthoritativeCommandExecutor {
         }
         if (envelope instanceof CsWarmachineDrill wd) {
             return handleWarmachineDrill(session, issuingSeatIndex, expectedMatchId, wd);
+        }
+        if (envelope instanceof CsUnitRepair r) {
+            return handleUnitRepair(session, issuingSeatIndex, expectedMatchId, r);
+        }
+        if (envelope instanceof CsTransportPickup tp) {
+            return handleTransportPickup(session, issuingSeatIndex, expectedMatchId, tp);
+        }
+        if (envelope instanceof CsTransportDisembark td) {
+            return handleTransportDisembark(session, issuingSeatIndex, expectedMatchId, td);
+        }
+        if (envelope instanceof CsConvertToAlbatross ca) {
+            return handleConvertToAlbatross(session, issuingSeatIndex, expectedMatchId, ca);
+        }
+        if (envelope instanceof CsConvertToLeviathan cl) {
+            return handleConvertToLeviathan(session, issuingSeatIndex, expectedMatchId, cl);
+        }
+        if (envelope instanceof CsRevertTransport rt) {
+            return handleRevertTransport(session, issuingSeatIndex, expectedMatchId, rt);
         }
         if (envelope instanceof CsEndTurn e) {
             return handleEndTurn(session, issuingSeatIndex, expectedMatchId, e);
@@ -224,6 +248,142 @@ public final class AuthoritativeCommandExecutor {
         }
         if (!session.tryWarmachineBuildUnit(wm, type)) {
             return CommandApplyResult.reject("ILLEGAL_BUILD", "War Machine fabrication rejected");
+        }
+        return CommandApplyResult.ok(MatchSnapshotExporter.export(session, expectedMatchId));
+    }
+
+    private static CommandApplyResult handleUnitRepair(
+        PlayableGameSession session,
+        int seatIndex,
+        String expectedMatchId,
+        CsUnitRepair command
+    ) {
+        if (!expectedMatchId.equals(command.matchId())) {
+            return CommandApplyResult.reject("MATCH_ID", "Stale match id");
+        }
+        if (!isActiveSeat(session, seatIndex)) {
+            return CommandApplyResult.reject("NOT_YOUR_TURN", "Seat cannot act now");
+        }
+        Unit unit = findUnit(session, command.unitId());
+        if (unit == null || unit.getOwner() != session.getPlayers().get(seatIndex)) {
+            return CommandApplyResult.reject("BAD_UNIT", "Unit not found or not owned");
+        }
+        if (!session.tryStartFieldRepair(unit)) {
+            return CommandApplyResult.reject("ILLEGAL_REPAIR", "Field repair rejected");
+        }
+        return CommandApplyResult.ok(MatchSnapshotExporter.export(session, expectedMatchId));
+    }
+
+    private static CommandApplyResult handleTransportPickup(
+        PlayableGameSession session,
+        int seatIndex,
+        String expectedMatchId,
+        CsTransportPickup command
+    ) {
+        if (!expectedMatchId.equals(command.matchId())) {
+            return CommandApplyResult.reject("MATCH_ID", "Stale match id");
+        }
+        if (!isActiveSeat(session, seatIndex)) {
+            return CommandApplyResult.reject("NOT_YOUR_TURN", "Seat cannot act now");
+        }
+        Unit transport = findUnit(session, command.transportUnitId());
+        Unit passenger = findUnit(session, command.passengerUnitId());
+        if (transport == null || passenger == null) {
+            return CommandApplyResult.reject("BAD_UNIT", "Transport or passenger not found");
+        }
+        if (transport.getOwner() != session.getPlayers().get(seatIndex)) {
+            return CommandApplyResult.reject("BAD_UNIT", "Transport not owned");
+        }
+        if (!session.tryTransportPickup(transport, passenger)) {
+            return CommandApplyResult.reject("ILLEGAL_PICKUP", "Transport pickup rejected");
+        }
+        return CommandApplyResult.ok(MatchSnapshotExporter.export(session, expectedMatchId));
+    }
+
+    private static CommandApplyResult handleTransportDisembark(
+        PlayableGameSession session,
+        int seatIndex,
+        String expectedMatchId,
+        CsTransportDisembark command
+    ) {
+        if (!expectedMatchId.equals(command.matchId())) {
+            return CommandApplyResult.reject("MATCH_ID", "Stale match id");
+        }
+        if (!isActiveSeat(session, seatIndex)) {
+            return CommandApplyResult.reject("NOT_YOUR_TURN", "Seat cannot act now");
+        }
+        Unit transport = findUnit(session, command.transportUnitId());
+        if (transport == null || transport.getOwner() != session.getPlayers().get(seatIndex)) {
+            return CommandApplyResult.reject("BAD_UNIT", "Transport not found or not owned");
+        }
+        if (!session.tryTransportDisembark(transport)) {
+            return CommandApplyResult.reject("ILLEGAL_DISEMBARK", "Disembark rejected");
+        }
+        return CommandApplyResult.ok(MatchSnapshotExporter.export(session, expectedMatchId));
+    }
+
+    private static CommandApplyResult handleConvertToAlbatross(
+        PlayableGameSession session,
+        int seatIndex,
+        String expectedMatchId,
+        CsConvertToAlbatross command
+    ) {
+        if (!expectedMatchId.equals(command.matchId())) {
+            return CommandApplyResult.reject("MATCH_ID", "Stale match id");
+        }
+        if (!isActiveSeat(session, seatIndex)) {
+            return CommandApplyResult.reject("NOT_YOUR_TURN", "Seat cannot act now");
+        }
+        Unit unit = findUnit(session, command.unitId());
+        if (unit == null || unit.getOwner() != session.getPlayers().get(seatIndex)) {
+            return CommandApplyResult.reject("BAD_UNIT", "Unit not found or not owned");
+        }
+        if (!session.convertUnitToAlbatross(unit)) {
+            return CommandApplyResult.reject("ILLEGAL_CONVERT", "Albatross conversion rejected");
+        }
+        return CommandApplyResult.ok(MatchSnapshotExporter.export(session, expectedMatchId));
+    }
+
+    private static CommandApplyResult handleConvertToLeviathan(
+        PlayableGameSession session,
+        int seatIndex,
+        String expectedMatchId,
+        CsConvertToLeviathan command
+    ) {
+        if (!expectedMatchId.equals(command.matchId())) {
+            return CommandApplyResult.reject("MATCH_ID", "Stale match id");
+        }
+        if (!isActiveSeat(session, seatIndex)) {
+            return CommandApplyResult.reject("NOT_YOUR_TURN", "Seat cannot act now");
+        }
+        Unit unit = findUnit(session, command.unitId());
+        if (unit == null || unit.getOwner() != session.getPlayers().get(seatIndex)) {
+            return CommandApplyResult.reject("BAD_UNIT", "Unit not found or not owned");
+        }
+        if (!session.convertUnitToLeviathan(unit)) {
+            return CommandApplyResult.reject("ILLEGAL_CONVERT", "Leviathan conversion rejected");
+        }
+        return CommandApplyResult.ok(MatchSnapshotExporter.export(session, expectedMatchId));
+    }
+
+    private static CommandApplyResult handleRevertTransport(
+        PlayableGameSession session,
+        int seatIndex,
+        String expectedMatchId,
+        CsRevertTransport command
+    ) {
+        if (!expectedMatchId.equals(command.matchId())) {
+            return CommandApplyResult.reject("MATCH_ID", "Stale match id");
+        }
+        if (!isActiveSeat(session, seatIndex)) {
+            return CommandApplyResult.reject("NOT_YOUR_TURN", "Seat cannot act now");
+        }
+        Unit unit = findUnit(session, command.unitId());
+        if (unit == null || unit.getOwner() != session.getPlayers().get(seatIndex)) {
+            return CommandApplyResult.reject("BAD_UNIT", "Unit not found or not owned");
+        }
+        if (!session.revertTransport(unit)) {
+            return CommandApplyResult.reject("ILLEGAL_REVERT", "Revert transport rejected");
         }
         return CommandApplyResult.ok(MatchSnapshotExporter.export(session, expectedMatchId));
     }

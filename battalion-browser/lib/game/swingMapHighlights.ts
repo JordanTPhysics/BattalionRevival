@@ -27,11 +27,17 @@ export function canUnitMoveForActiveSeat(snapshot: MatchSnapshot, seat: number, 
   if (snapshot.matchFinished || u.hasMoved || u.ownerSeatIndex !== seat) {
     return false;
   }
+  if (u.embarkedInTransportUnitId != null && u.embarkedInTransportUnitId !== "") {
+    return false;
+  }
   return snapshot.activePlayerIndex === seat;
 }
 
 /** Mirrors {@link PlayableGameSession#canUnitAttack(Unit)} ownership implied by caller. */
 export function canUnitAttackPreview(u: UnitSnapshot): boolean {
+  if (u.embarkedInTransportUnitId != null && u.embarkedInTransportUnitId !== "") {
+    return false;
+  }
   const s = getUnitTypeStats(u.unitType);
   if (!s) {
     return false;

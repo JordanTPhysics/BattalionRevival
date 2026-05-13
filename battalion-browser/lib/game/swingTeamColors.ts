@@ -1,3 +1,5 @@
+import type { TeamPaintStyle } from "@/lib/game/teamPaintStyle";
+
 /**
  * Team tint RGB aligned with {@code GameWindow#spriteTintForOwner} / {@code teamColorForPlacedSprite}
  * in the Swing client (hex 0xRRGGBB).
@@ -36,4 +38,19 @@ export function teamRgbFromTeamId(teamId: number | null): number {
  */
 export function unitRgbFromOwnerSeat(ownerSeatIndex: number): number {
   return teamRgbFromTeamId(ownerSeatIndex + 1);
+}
+
+/**
+ * When {@code ownerSeatIndex} matches the local player's seat, use {@code clientPaint} for masked sprites;
+ * otherwise use the authoritative Swing palette for that seat.
+ */
+export function resolveUnitTeamPaintStyle(
+  ownerSeatIndex: number,
+  yourSeatIndex: number | null | undefined,
+  clientPaint: TeamPaintStyle
+): TeamPaintStyle {
+  if (yourSeatIndex != null && ownerSeatIndex === yourSeatIndex) {
+    return clientPaint;
+  }
+  return { kind: "solid", rgb: unitRgbFromOwnerSeat(ownerSeatIndex) };
 }

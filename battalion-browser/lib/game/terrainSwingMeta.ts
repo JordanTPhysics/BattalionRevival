@@ -53,9 +53,38 @@ const TERRAIN_DEFENSE_MODIFIER: Record<string, number> = {
   SHORE_TRIPLE_UP: 0,
 };
 
+function terrainDefenseModifierOrInfer(terrainEnumName: string): number {
+  const exact = TERRAIN_DEFENSE_MODIFIER[terrainEnumName];
+  if (exact !== undefined) {
+    return exact;
+  }
+  if (terrainEnumName.startsWith("SEA_") || terrainEnumName.startsWith("SHORE_")) {
+    return 0;
+  }
+  if (terrainEnumName.startsWith("REEF_")) {
+    return 0;
+  }
+  if (terrainEnumName.startsWith("ARCHIPELAGO_")) {
+    return 0.15;
+  }
+  if (terrainEnumName.startsWith("DEPLETED_ORE_DEPOSIT")) {
+    return 0;
+  }
+  if (terrainEnumName.startsWith("ORE_DEPOSIT") || terrainEnumName.startsWith("ENRICHED_ORE_DEPOSIT")) {
+    return 0;
+  }
+  if (terrainEnumName === "WASTELAND") {
+    return 0;
+  }
+  if (terrainEnumName === "VOLCANO" || terrainEnumName.startsWith("ROCK_FORMATION_")) {
+    return 0.35;
+  }
+  return 0;
+}
+
 /** Defense bonus percent shown in Swing GameInfoPanel. */
 export function terrainDefensePercent(terrainEnumName: string): number {
-  return Math.round((TERRAIN_DEFENSE_MODIFIER[terrainEnumName] ?? 0) * 100);
+  return Math.round(terrainDefenseModifierOrInfer(terrainEnumName) * 100);
 }
 
 const LARGE_COST = Math.floor(Number.MAX_SAFE_INTEGER / 8);

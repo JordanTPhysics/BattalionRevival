@@ -212,7 +212,7 @@ export default function MatchmakingPage() {
 
   if (activeLobby) {
     return (
-      <div className="flex max-w-3xl flex-col gap-6">
+      <div className="flex flex-1 flex-col p-4 backdrop-blur-sm bg-zinc-900/50 rounded-xl ">
         <div>
           <h1 className="text-2xl font-semibold text-zinc-100">Lobby</h1>
           <p className="mt-2 text-sm text-zinc-500">
@@ -313,7 +313,7 @@ export default function MatchmakingPage() {
   }
 
   return (
-    <div className="flex max-w-3xl flex-col gap-6">
+    <div className="flex flex-1 flex-col p-4 backdrop-blur-sm bg-zinc-900/50 rounded-xl">
       <div>
         <h1 className="text-2xl font-semibold text-zinc-100">Matchmaking</h1>
         <p className="mt-2 text-sm text-zinc-500">
@@ -323,7 +323,7 @@ export default function MatchmakingPage() {
         </p>
       </div>
 
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900/40 p-4">
+      <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-4">
         <label className="flex flex-col gap-1 text-sm">
           <span className="text-zinc-500">Game server (HTTP origin)</span>
           <input

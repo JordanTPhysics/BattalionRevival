@@ -52,6 +52,9 @@ export function playMovementSfx(unitType: string): void {
     case "Vulture":
       src = "/assets/sounds/516_AircraftMove_AircraftMove.wav";
       break;
+    case "Annihilator":
+      src = "/assets/sounds/472_MassiveTankMove2_MassiveTankMove2.wav";
+      break;
     default:
       src = "/assets/sounds/353_CommandoMove2_CommandoMove2.wav";
   }

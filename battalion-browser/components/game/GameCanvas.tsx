@@ -13,6 +13,7 @@ import {
   Texture,
 } from "pixi.js";
 import type { GridPoint, MatchSnapshot, UnitSnapshot } from "@/lib/protocol/types";
+import { contextMenuHasAnyAction } from "@/lib/game/unitContextMenuEligibility";
 import {
   structureTextureUrl,
   terrainTextureUrl,
@@ -32,9 +33,18 @@ import {
   TILE_PX,
 } from "@/lib/game/pixiTileLayout";
 import { terrainFallbackRgb } from "@/lib/game/terrainFallbackRgb";
-import { unitRgbFromOwnerSeat, teamRgbFromTeamId } from "@/lib/game/swingTeamColors";
+import {
+  resolveUnitTeamPaintStyle,
+  teamRgbFromTeamId,
+} from "@/lib/game/swingTeamColors";
+import {
+  approximateTintFromPaintStyle,
+  teamPaintStyleCacheKey,
+  type TeamPaintStyle,
+} from "@/lib/game/teamPaintStyle";
 import { getMatchWebSocketClient } from "@/stores/matchStore";
 import { useGameHudStore } from "@/stores/gameHudStore";
+import { usePlayerUnitAppearanceStore } from "@/stores/playerUnitAppearanceStore";
 import {
   isValidMovementPathSnapshot,
   reachableEndTiles,
@@ -115,7 +125,13 @@ function xyKey(x: number, y: number): string {
 }
 
 function occupant(snapshot: MatchSnapshot, gx: number, gy: number): UnitSnapshot | undefined {
-  return snapshot.units.find((u) => u.x === gx && u.y === gy && u.health > 0);
+  return snapshot.units.find(
+    (u) =>
+      u.x === gx &&
+      u.y === gy &&
+      u.health > 0 &&
+      !(u.embarkedInTransportUnitId != null && u.embarkedInTransportUnitId !== "")
+  );
 }
 
 function resolveYellowSelectionUnit(snapshot: MatchSnapshot | null, mapSelectedGrid: { x: number; y: number } | null) {
@@ -370,7 +386,7 @@ type OpponentQueuedAction =
 type SequentialHolderInfo = {
   holder: Container;
   sprite: Sprite;
-  teamRgb: number;
+  teamPaint: TeamPaintStyle;
   sheetUrl: string;
   layout: SheetLayout | null;
   stats: ReturnType<typeof getUnitTypeStats>;
@@ -427,18 +443,21 @@ function sequentialGapMsBetween(prevItem: OpponentQueuedAction | null, curItem: 
  * When it is not the local player's turn and several units change in one snapshot (typical AI turn),
  * return an ordered queue so animations run one-after-another instead of overlapping.
  */
-function buildOpponentSequentialPlan(
+/**
+ * Infers move/attack delta items between {@code prevById} and {@code snap}.
+ * When {@code restrictOpponentAttackInference} is true, lethal-ghost and standalone-attack pairing
+ * only considers opponent seats (matches {@link buildOpponentSequentialPlan}). When false, all seats
+ * are included so kill explosions can be deferred for the local player's attacks too.
+ */
+function buildRawSnapshotActionItems(
   snap: MatchSnapshot,
   cfg: GameInteractionConfig | null,
-  prevById: Map<string, PriorUnitState>
-): OpponentQueuedAction[] | null {
-  if (snap.matchFinished) {
-    return null;
-  }
-  if (prevById.size === 0) {
-    return null;
-  }
+  prevById: Map<string, PriorUnitState>,
+  restrictOpponentAttackInference: boolean
+): OpponentQueuedAction[] {
   const oppSeat = (seat: number): boolean => !cfg || seat !== cfg.yourSeatIndex;
+  const seatOkForAttackInfer = (seat: number): boolean =>
+    !restrictOpponentAttackInference || oppSeat(seat);
 
   const items: OpponentQueuedAction[] = [];
   for (const u of snap.units) {
@@ -492,7 +511,7 @@ function buildOpponentSequentialPlan(
     if (!p || p.x !== u.x || p.y !== u.y || !u.hasMoved || p.hasMoved) {
       continue;
     }
-    if (usedAttackers.has(u.id) || !oppSeat(u.ownerSeatIndex)) {
+    if (usedAttackers.has(u.id) || !seatOkForAttackInfer(u.ownerSeatIndex)) {
       continue;
     }
     for (const v of victims) {
@@ -519,7 +538,7 @@ function buildOpponentSequentialPlan(
     const ghost = ghostFromPrior(gid, gp);
     for (const it of items) {
       if (it.kind !== "move" || it.postMoveAttackToward) continue;
-      if (!it.u.hasMoved || !oppSeat(it.u.ownerSeatIndex)) continue;
+      if (!it.u.hasMoved || !seatOkForAttackInfer(it.u.ownerSeatIndex)) continue;
       const moverAtDest: UnitSnapshot = { ...it.u, x: it.to.x, y: it.to.y };
       if (attackPairingReachable(snap, moverAtDest, ghost)) {
         it.postMoveAttackToward = { x: ghost.x, y: ghost.y };
@@ -539,7 +558,7 @@ function buildOpponentSequentialPlan(
       if (!p || p.x !== u.x || p.y !== u.y || !u.hasMoved || p.hasMoved) {
         continue;
       }
-      if (!oppSeat(u.ownerSeatIndex)) continue;
+      if (!seatOkForAttackInfer(u.ownerSeatIndex)) continue;
       if (usedAttackers.has(u.id)) continue;
       if (attackPairingReachable(snap, u, ghost)) {
         items.push({ kind: "attack", unitId: u.id, u, toward: { x: ghost.x, y: ghost.y } });
@@ -549,6 +568,23 @@ function buildOpponentSequentialPlan(
       }
     }
   }
+
+  return items;
+}
+
+function buildOpponentSequentialPlan(
+  snap: MatchSnapshot,
+  cfg: GameInteractionConfig | null,
+  prevById: Map<string, PriorUnitState>
+): OpponentQueuedAction[] | null {
+  if (snap.matchFinished) {
+    return null;
+  }
+  if (prevById.size === 0) {
+    return null;
+  }
+
+  const items = buildRawSnapshotActionItems(snap, cfg, prevById, true);
 
   if (items.length === 0) {
     return null;
@@ -572,7 +608,7 @@ function buildOpponentSequentialPlan(
   return items;
 }
 
-/** Unit ids removed in this snapshot whose death tile is covered by a queued opponent attack — defer SFX until that attack finishes. */
+/** Unit ids removed in this snapshot whose death tile is covered by a queued attack in the delta plan — defer SFX until that attack finishes. */
 function collectDeferredExplosionVictimIds(
   plan: OpponentQueuedAction[],
   prevById: Map<string, PriorUnitState>,
@@ -600,6 +636,23 @@ function collectDeferredExplosionVictimIds(
 const WALK_FRAME_MS = 72;
 const ATTACK_FRAME_MS = 55;
 
+/** Tile the attacker is facing toward (adjacent defender cell for explosion sync). */
+function defenderTileFromAttackerFacing(attX: number, attY: number, facingStr: string): GridPoint {
+  const f = parseFacing(facingStr);
+  switch (f) {
+    case "NORTH":
+      return { x: attX, y: attY - 1 };
+    case "SOUTH":
+      return { x: attX, y: attY + 1 };
+    case "EAST":
+      return { x: attX + 1, y: attY };
+    case "WEST":
+      return { x: attX - 1, y: attY };
+    default:
+      return { x: attX, y: attY };
+  }
+}
+
 function clamp01(v: number): number {
   return Math.min(1, Math.max(0, v));
 }
@@ -607,7 +660,7 @@ function clamp01(v: number): number {
 /** Sample movement / attack frame — movement uses 6-column Swing mapping; attack strips use 4 columns + {@code attack_rows.json}. */
 function orientationSheetTexture(
   sheetUrl: string,
-  teamRgb: number,
+  teamPaint: TeamPaintStyle,
   rowCount: number,
   facing: CardinalFacing,
   animMs: number,
@@ -620,7 +673,7 @@ function orientationSheetTexture(
     sheetColumns === UNIT_ATTACK_SHEET_COLUMNS
       ? sheetColumnForAttackAnimation(facing)
       : sheetColumnForAnimation(facing, animIx);
-  return getMaskedSheetFrameTextureSync(sheetUrl, teamRgb, row, col);
+  return getMaskedSheetFrameTextureSync(sheetUrl, teamPaint, row, col);
 }
 
 function attachUnitHealthBar(holder: Container, u: UnitSnapshot, maxHp: number): void {
@@ -653,7 +706,7 @@ type UnitAnim =
     holder: Container;
     sprite: Sprite;
     sheetUrl: string;
-    teamRgb: number;
+    teamPaint: TeamPaintStyle;
     rowCount: number;
     facing: CardinalFacing;
     sx: number;
@@ -670,7 +723,7 @@ type UnitAnim =
     holder: Container;
     sprite: Sprite;
     sheetUrl: string;
-    teamRgb: number;
+    teamPaint: TeamPaintStyle;
     rowCount: number;
     path: GridPoint[];
     segIndex: number;
@@ -692,7 +745,7 @@ type UnitAnim =
     holder: Container;
     sprite: Sprite;
     sheetUrl: string;
-    teamRgb: number;
+    teamPaint: TeamPaintStyle;
     rowCount: number;
     sheetColumns: number;
     facing: CardinalFacing;
@@ -757,6 +810,7 @@ type UnitAnim =
 
 export function GameCanvas({ snapshot, className, interaction }: GameCanvasProps) {
   const mapSelectedGrid = useGameHudStore((s) => s.mapSelectedGrid);
+  const playerUnitPaintKey = usePlayerUnitAppearanceStore((s) => teamPaintStyleCacheKey(s.paintStyle));
 
   const hostRef = useRef<HTMLDivElement>(null);
   const snapshotRef = useRef(snapshot);
@@ -850,12 +904,24 @@ export function GameCanvas({ snapshot, className, interaction }: GameCanvasProps
       prevTiles: Map<string, PriorUnitState> | null;
       liveIds: Set<string> | null;
       highRoot: Container | null;
+      /** Last-frame unit visuals for deferred kills — removed when explosion plays. */
+      ghostHolders: Map<string, Container>;
     } = {
       victimIds: new Set(),
       fired: new Set(),
       prevTiles: null,
       liveIds: null,
       highRoot: null,
+      ghostHolders: new Map(),
+    };
+
+    const removeDeferredGhostForVictim = (goneId: string): void => {
+      const st = deferredExplosionState;
+      const h = st.ghostHolders.get(goneId);
+      if (h) {
+        h.destroy({ children: true });
+        st.ghostHolders.delete(goneId);
+      }
     };
 
     const triggerDeferredKillExplosionsForTile = (tx: number, ty: number): void => {
@@ -868,6 +934,7 @@ export function GameCanvas({ snapshot, className, interaction }: GameCanvasProps
         if (!st.victimIds.has(goneId) || st.fired.has(goneId)) continue;
         if (p.x !== tx || p.y !== ty) continue;
         st.fired.add(goneId);
+        removeDeferredGhostForVictim(goneId);
         playExplosionSfx();
         const exh = new Container();
         exh.x = p.x * TILE_PX;
@@ -897,6 +964,7 @@ export function GameCanvas({ snapshot, className, interaction }: GameCanvasProps
         const p = st.prevTiles.get(goneId);
         if (!p) continue;
         st.fired.add(goneId);
+        removeDeferredGhostForVictim(goneId);
         playExplosionSfx();
         const exh = new Container();
         exh.x = p.x * TILE_PX;
@@ -1023,7 +1091,7 @@ export function GameCanvas({ snapshot, className, interaction }: GameCanvasProps
           holder: info.holder,
           sprite: info.sprite,
           sheetUrl: sa.atkSheetUrl,
-          teamRgb: info.teamRgb,
+          teamPaint: info.teamPaint,
           rowCount: sa.rowCount,
           sheetColumns: sa.sheetColumns,
           facing: sa.facing,
@@ -1068,7 +1136,7 @@ export function GameCanvas({ snapshot, className, interaction }: GameCanvasProps
           holder: info.holder,
           sprite: info.sprite,
           sheetUrl: info.sheetUrl,
-          teamRgb: info.teamRgb,
+          teamPaint: info.teamPaint,
           rowCount: info.layout.rows,
           path: pathValid,
           segIndex: 0,
@@ -1110,7 +1178,7 @@ export function GameCanvas({ snapshot, className, interaction }: GameCanvasProps
             holder: info.holder,
             sprite: info.sprite,
             sheetUrl: fuLin.atkSheetUrl,
-            teamRgb: info.teamRgb,
+            teamPaint: info.teamPaint,
             rowCount: fuLin.rowCount,
             sheetColumns: fuLin.sheetColumns,
             facing: fuLin.facing,
@@ -1131,7 +1199,7 @@ export function GameCanvas({ snapshot, className, interaction }: GameCanvasProps
         holder: info.holder,
         sprite: info.sprite,
         sheetUrl: info.sheetUrl,
-        teamRgb: info.teamRgb,
+            teamPaint: info.teamPaint,
         rowCount: info.layout?.rows ?? 1,
         facing: facingMv,
         sx: from.x * TILE_PX,
@@ -1170,7 +1238,7 @@ export function GameCanvas({ snapshot, className, interaction }: GameCanvasProps
             tw.holder.y = tw.sy + (tw.ey - tw.sy) * p;
             const nt = orientationSheetTexture(
               tw.sheetUrl,
-              tw.teamRgb,
+              tw.teamPaint,
               tw.rowCount,
               tw.facing,
               tw.animMs,
@@ -1203,7 +1271,7 @@ export function GameCanvas({ snapshot, className, interaction }: GameCanvasProps
             const facingSeg = facingFromGridStep(from, to);
             const nt = orientationSheetTexture(
               tw.sheetUrl,
-              tw.teamRgb,
+              tw.teamPaint,
               tw.rowCount,
               facingSeg,
               tw.animMs,
@@ -1230,7 +1298,7 @@ export function GameCanvas({ snapshot, className, interaction }: GameCanvasProps
                     holder: tw.holder,
                     sprite: tw.sprite,
                     sheetUrl: fu.atkSheetUrl,
-                    teamRgb: tw.teamRgb,
+                    teamPaint: tw.teamPaint,
                     rowCount: fu.rowCount,
                     sheetColumns: fu.sheetColumns,
                     facing: fu.facing,
@@ -1290,7 +1358,7 @@ export function GameCanvas({ snapshot, className, interaction }: GameCanvasProps
             tw.tMs += dt;
             const nt = orientationSheetTexture(
               tw.sheetUrl,
-              tw.teamRgb,
+              tw.teamPaint,
               tw.rowCount,
               tw.facing,
               tw.animMs,
@@ -1474,6 +1542,7 @@ export function GameCanvas({ snapshot, className, interaction }: GameCanvasProps
       deferredExplosionState.prevTiles = null;
       deferredExplosionState.liveIds = null;
       deferredExplosionState.highRoot = null;
+      deferredExplosionState.ghostHolders.clear();
 
       if (placeholder) {
         app.stage.removeChild(placeholder);
@@ -1527,15 +1596,12 @@ export function GameCanvas({ snapshot, className, interaction }: GameCanvasProps
 
       const liveUnitIds = new Set(snap.units.map((u) => u.id));
       const opponentSeqPlan = buildOpponentSequentialPlan(snap, interactionRef.current ?? null, prevPos);
-      if (opponentSeqPlan && opponentSeqPlan.length > 0) {
-        deferredExplosionState.victimIds = collectDeferredExplosionVictimIds(
-          opponentSeqPlan,
-          prevPos,
-          liveUnitIds
-        );
-      } else {
-        deferredExplosionState.victimIds.clear();
-      }
+      const rawDeltaItems = buildRawSnapshotActionItems(snap, interactionRef.current ?? null, prevPos, false);
+      deferredExplosionState.victimIds = collectDeferredExplosionVictimIds(
+        rawDeltaItems,
+        prevPos,
+        liveUnitIds
+      );
       deferredExplosionState.fired.clear();
       deferredExplosionState.prevTiles = prevPos;
       deferredExplosionState.liveIds = liveUnitIds;
@@ -1597,7 +1663,8 @@ export function GameCanvas({ snapshot, className, interaction }: GameCanvasProps
             if (su) {
               const rgb = teamRgbFromTeamId(tile.structureTeam);
               const uncUrl = uncolouredStructureTextureUrl(tile.structure);
-              const maskedSt = await getUncolouredFullImageTeamTexture(uncUrl, rgb);
+              const structurePaint = { kind: "solid" as const, rgb };
+              const maskedSt = await getUncolouredFullImageTeamTexture(uncUrl, structurePaint);
               let st = maskedSt;
               let stTint = 0xffffff;
               if (!st) {
@@ -1620,9 +1687,12 @@ export function GameCanvas({ snapshot, className, interaction }: GameCanvasProps
       const seqHoldersAccum = new Map<string, SequentialHolderInfo>();
 
       const hud = useGameHudStore.getState();
+      const yourSeat = interactionRef.current?.yourSeatIndex;
+      const clientPaint = usePlayerUnitAppearanceStore.getState().paintStyle;
 
       for (const u of snap.units) {
-        const rgb = unitRgbFromOwnerSeat(u.ownerSeatIndex);
+        const unitPaint = resolveUnitTeamPaintStyle(u.ownerSeatIndex, yourSeat, clientPaint);
+        const tintApprox = approximateTintFromPaintStyle(unitPaint);
         const stats = getUnitTypeStats(u.unitType);
         const maxHp = stats?.startingHealth ?? Math.max(1, u.health);
         const { url: sheetUrl, layout } = await pickUnitSheetUrl(u.unitType, "move");
@@ -1632,14 +1702,14 @@ export function GameCanvas({ snapshot, className, interaction }: GameCanvasProps
         if (layout != null) {
           tex = getMaskedSheetFrameTextureSync(
             sheetUrl,
-            rgb,
+            unitPaint,
             sheetRowForAnimation(0, layout.rows),
             sheetColumnForAnimation(parseFacing(u.facing), 0)
           );
         }
         if (!tex) {
           const uncUrl = uncolouredUnitTextureUrl(u.unitType);
-          const masked = await getUncolouredEastFrameTeamTexture(uncUrl, rgb);
+          const masked = await getUncolouredEastFrameTeamTexture(uncUrl, unitPaint);
           if (masked) {
             tex = masked;
           } else {
@@ -1647,7 +1717,7 @@ export function GameCanvas({ snapshot, className, interaction }: GameCanvasProps
             tex = await getTexture(legacyPath, () =>
               loadOrFallback(legacyPath, DEFAULT_UNIT_COLOR, TILE_PX, TILE_PX)
             );
-            tint = rgb;
+            tint = tintApprox;
           }
         }
         if (!app.renderer) return;
@@ -1714,7 +1784,7 @@ export function GameCanvas({ snapshot, className, interaction }: GameCanvasProps
           seqHoldersAccum.set(u.id, {
             holder,
             sprite,
-            teamRgb: rgb,
+            teamPaint: unitPaint,
             sheetUrl,
             layout,
             stats,
@@ -1725,7 +1795,7 @@ export function GameCanvas({ snapshot, className, interaction }: GameCanvasProps
 
         if (!seqEntry) {
           if (moved && stats !== null) {
-            playMovementSfx(stats.movementKind);
+            playMovementSfx(stats.unitType);
           }
 
           let pathFromHud: GridPoint[] | null = null;
@@ -1800,7 +1870,7 @@ export function GameCanvas({ snapshot, className, interaction }: GameCanvasProps
               holder,
               sprite,
               sheetUrl,
-              teamRgb: rgb,
+              teamPaint: unitPaint,
               rowCount: layout.rows,
               path: pathValid,
               segIndex: 0,
@@ -1809,6 +1879,12 @@ export function GameCanvas({ snapshot, className, interaction }: GameCanvasProps
               animMs: 0,
               followupAttack,
               chainedAttackUnitType: followupAttack != null ? u.unitType : undefined,
+              onDone:
+                chainAttackToward != null
+                  ? (): void => {
+                      triggerDeferredKillExplosionsForTile(chainAttackToward.x, chainAttackToward.y);
+                    }
+                  : undefined,
             });
           } else if (moved && pu !== undefined) {
             const facingMv = facingFromGridStep({ x: pu.x, y: pu.y }, { x: u.x, y: u.y });
@@ -1824,7 +1900,7 @@ export function GameCanvas({ snapshot, className, interaction }: GameCanvasProps
               holder,
               sprite,
               sheetUrl,
-              teamRgb: rgb,
+              teamPaint: unitPaint,
               rowCount: layout?.rows ?? 1,
               facing: facingMv,
               sx,
@@ -1841,22 +1917,76 @@ export function GameCanvas({ snapshot, className, interaction }: GameCanvasProps
             const atkPick = await pickUnitSheetUrl(u.unitType, "attack");
             if (atkPick.layout !== null && vis !== null) {
               playAttackSfx(u.unitType);
+              const defTile = defenderTileFromAttackerFacing(u.x, u.y, vis.facing);
               unitAnimList.push({
                 kind: "attack",
                 holder,
                 sprite,
                 sheetUrl: atkPick.url,
-                teamRgb: rgb,
+                teamPaint: unitPaint,
                 rowCount: atkPick.layout.rows,
                 sheetColumns: atkPick.layout.columns,
                 facing: parseFacing(vis.facing),
                 tMs: 0,
                 durationMs: 520,
                 animMs: 0,
+                onDone: (): void => {
+                  triggerDeferredKillExplosionsForTile(defTile.x, defTile.y);
+                },
               });
             }
           }
         }
+      }
+
+      for (const [goneId, p] of prevPos) {
+        if (liveUnitIds.has(goneId)) continue;
+        if (!deferredExplosionState.victimIds.has(goneId)) continue;
+        if (deferredExplosionState.fired.has(goneId)) continue;
+
+        const ghostU = ghostFromPrior(goneId, p);
+        const gPaint = resolveUnitTeamPaintStyle(ghostU.ownerSeatIndex, yourSeat, clientPaint);
+        const gTintApprox = approximateTintFromPaintStyle(gPaint);
+        const gStats = getUnitTypeStats(ghostU.unitType);
+        const gMaxHp = gStats?.startingHealth ?? Math.max(1, ghostU.health);
+        const gSheet = await pickUnitSheetUrl(ghostU.unitType, "move");
+
+        let gTex: Texture | null = null;
+        let gTint = 0xffffff;
+        if (gSheet.layout != null) {
+          gTex = getMaskedSheetFrameTextureSync(
+            gSheet.url,
+            gPaint,
+            sheetRowForAnimation(0, gSheet.layout.rows),
+            sheetColumnForAnimation(parseFacing(ghostU.facing), 0)
+          );
+        }
+        if (!gTex) {
+          const uncUrl = uncolouredUnitTextureUrl(ghostU.unitType);
+          const masked = await getUncolouredEastFrameTeamTexture(uncUrl, gPaint);
+          if (masked) {
+            gTex = masked;
+          } else {
+            const legacyPath = unitTextureUrl(ghostU.unitType);
+            gTex = await getTexture(legacyPath, () =>
+              loadOrFallback(legacyPath, DEFAULT_UNIT_COLOR, TILE_PX, TILE_PX)
+            );
+            gTint = gTintApprox;
+          }
+        }
+        if (!app.renderer) return;
+
+        const ghostHolder = new Container();
+        ghostHolder.x = p.x * TILE_PX;
+        ghostHolder.y = p.y * TILE_PX;
+        ghostHolder.alpha = ghostU.cloaked ? 0.45 : 1;
+        const gSprite = new Sprite(gTex);
+        layoutUnitSpriteInTileCell(gSprite, gTex);
+        ghostHolder.addChild(gSprite);
+        attachUnitHealthBar(ghostHolder, ghostU, gMaxHp);
+        gSprite.tint = gTint;
+        unitsRoot.addChild(ghostHolder);
+        deferredExplosionState.ghostHolders.set(goneId, ghostHolder);
       }
 
       if (opponentSeqPlan !== null && opponentSeqPlan.length > 0) {
@@ -2006,14 +2136,12 @@ export function GameCanvas({ snapshot, className, interaction }: GameCanvasProps
         const gx = Math.floor(local.x / TILE_PX);
         const gy = Math.floor(local.y / TILE_PX);
         if (gx < 0 || gy < 0 || gx >= snap.width || gy >= snap.height) return;
-        const occ = snap.units.filter((u) => u.health > 0 && u.x === gx && u.y === gy);
-        const u = occ[0];
+        const u = occupant(snap, gx, gy);
         if (
           u &&
           cfg.yourSeatIndex === snap.activePlayerIndex &&
           u.ownerSeatIndex === cfg.yourSeatIndex &&
-          u.unitType === "Warmachine" &&
-          !u.hasMoved
+          contextMenuHasAnyAction(snap, u, cfg.yourSeatIndex)
         ) {
           useGameHudStore.getState().closeContextMenu();
           const ne = e.nativeEvent as PointerEvent | undefined;
@@ -2375,7 +2503,7 @@ export function GameCanvas({ snapshot, className, interaction }: GameCanvasProps
     if (engineRef.current) {
       void engineRef.current.rebuild(snapshot);
     }
-  }, [snapshot, interaction]);
+  }, [snapshot, interaction, playerUnitPaintKey]);
 
   /** Selection overlays only — full rebuild would clear the Pixi scene and interrupt opponent sequential move animations. */
   useEffect(() => {

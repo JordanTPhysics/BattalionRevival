@@ -15,8 +15,15 @@ function keyxy(x: number, y: number): string {
   return `${x},${y}`;
 }
 
+/** True when this unit is embarked in a transport (not occupying its own map tile). */
+function isEmbarkedInSnapshot(u: UnitSnapshot): boolean {
+  return u.embarkedInTransportUnitId != null && u.embarkedInTransportUnitId !== "";
+}
+
 function unitOccupant(snapshot: MatchSnapshot, x: number, y: number): UnitSnapshot | undefined {
-  return snapshot.units.find((u) => u.x === x && u.y === y);
+  return snapshot.units.find(
+    (u) => u.x === x && u.y === y && !isEmbarkedInSnapshot(u)
+  );
 }
 
 /** Mirrors {@link com.game.systems.JammingRules#isCellJammedAgainstAircraft} (enemy jammer only). */

@@ -2,11 +2,17 @@ package com.game.network.client;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.game.network.protocol.CsAttackUnit;
+import com.game.network.protocol.CsConvertToAlbatross;
+import com.game.network.protocol.CsConvertToLeviathan;
 import com.game.network.protocol.CsMoveAndAttackUnit;
 import com.game.network.protocol.CsEndTurn;
 import com.game.network.protocol.CsFactoryBuild;
 import com.game.network.protocol.CsMoveUnit;
+import com.game.network.protocol.CsRevertTransport;
 import com.game.network.protocol.CsSurrender;
+import com.game.network.protocol.CsTransportDisembark;
+import com.game.network.protocol.CsTransportPickup;
+import com.game.network.protocol.CsUnitRepair;
 import com.game.network.protocol.CsWarmachineBuild;
 import com.game.network.protocol.CsWarmachineDrill;
 import com.game.network.protocol.GridPoint;
@@ -147,6 +153,30 @@ public final class OnlineMatchCoordinator implements AutoCloseable {
 
     public void requestWarmachineDrill(String warmachineUnitId) {
         send(new CsWarmachineDrill(ProtocolVersions.NETWORK_PROTOCOL_VERSION, matchId, warmachineUnitId));
+    }
+
+    public void requestUnitRepair(String unitId) {
+        send(new CsUnitRepair(ProtocolVersions.NETWORK_PROTOCOL_VERSION, matchId, unitId));
+    }
+
+    public void requestTransportPickup(String transportUnitId, String passengerUnitId) {
+        send(new CsTransportPickup(ProtocolVersions.NETWORK_PROTOCOL_VERSION, matchId, transportUnitId, passengerUnitId));
+    }
+
+    public void requestTransportDisembark(String transportUnitId) {
+        send(new CsTransportDisembark(ProtocolVersions.NETWORK_PROTOCOL_VERSION, matchId, transportUnitId));
+    }
+
+    public void requestConvertToAlbatross(String unitId) {
+        send(new CsConvertToAlbatross(ProtocolVersions.NETWORK_PROTOCOL_VERSION, matchId, unitId));
+    }
+
+    public void requestConvertToLeviathan(String unitId) {
+        send(new CsConvertToLeviathan(ProtocolVersions.NETWORK_PROTOCOL_VERSION, matchId, unitId));
+    }
+
+    public void requestRevertTransport(String unitId) {
+        send(new CsRevertTransport(ProtocolVersions.NETWORK_PROTOCOL_VERSION, matchId, unitId));
     }
 
     public void requestEndTurn() {

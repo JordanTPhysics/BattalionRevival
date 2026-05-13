@@ -8,7 +8,8 @@ import com.game.model.units.UnitType.MovementKind;
 import java.awt.Color;
 
 /**
- * One constant per terrain texture under {@code /assets/terrain/}.
+ * One constant per terrain texture under {@code /assets/terrain/} or
+ * {@code /assets/terrain/animated/} (see client {@code AssetManager} load order).
  * {@link #assetStem()} matches the PNG file name
  * without extension (mixed case, as on disk). Movement and passability follow
  * the previous broad rules, keyed off
@@ -57,6 +58,10 @@ public enum TerrainType {
     REEF_1("Reef_1", 0.0, Mobility.REEF_SURFACE),
     ROCK_FORMATION_1("Rock_Formation_1", 0.35, Mobility.MOUNTAIN_PEAK),
     SEA_MAIN("Sea_Main", 0.0, Mobility.SEA_SURFACE),
+    SEA_ONE_LEFTDOWN_ONE_RIGHTUP_ONE_RIGHTDOWN("Sea_One_LeftDown_One_RightUp_One_RightDown", 0.0, Mobility.SEA_SURFACE),
+    SEA_ONE_LEFTDOWN_ONE_RIGHTDOWN("Sea_One_LeftDown_One_RightDown", 0.0, Mobility.SEA_SURFACE),
+    SEA_ONE_LEFTDOWN_ONE_RIGHTUP("Sea_One_LeftDown_One_RightUp", 0.0, Mobility.SEA_SURFACE),
+    SEA_ONE_LEFTDOWN_ONE_LEFTUP("Sea_One_LeftDown_One_LeftUp", 0.0, Mobility.SEA_SURFACE),
     SHORE_DOUBLE_LEFTDOWN("Shore_Double_LeftDown", 0.0, Mobility.SHORE_EDGE),
     SHORE_DOUBLE_LEFTUP("Shore_Double_LeftUp", 0.0, Mobility.SHORE_EDGE),
     SHORE_DOUBLE_RIGHTDOWN("Shore_Double_RightDown", 0.0, Mobility.SHORE_EDGE),
@@ -66,7 +71,70 @@ public enum TerrainType {
     SHORE_TRIPLE_DOWN("Shore_Triple_Down", 0.0, Mobility.SHORE_EDGE),
     SHORE_TRIPLE_LEFT("Shore_Triple_Left", 0.0, Mobility.SHORE_EDGE),
     SHORE_TRIPLE_RIGHT("Shore_Triple_Right", 0.0, Mobility.SHORE_EDGE),
-    SHORE_TRIPLE_UP("Shore_Triple_Up", 0.0, Mobility.SHORE_EDGE);
+    SHORE_TRIPLE_UP("Shore_Triple_Up", 0.0, Mobility.SHORE_EDGE),
+    ARCHIPELAGO_1("Archipelago_1", 0.15, Mobility.ARCHIPELAGO_SHALLOW),
+    ARCHIPELAGO_3("Archipelago_3", 0.15, Mobility.ARCHIPELAGO_SHALLOW),
+    ARCHIPELAGO_4("Archipelago_4", 0.15, Mobility.ARCHIPELAGO_SHALLOW),
+    ENRICHED_ORE_DEPOSIT_1("Enriched_Ore_Deposit_1", 0.0, Mobility.OPEN_PLAINS),
+    ENRICHED_ORE_DEPOSIT_2("Enriched_Ore_Deposit_2", 0.0, Mobility.OPEN_PLAINS),
+    ORE_DEPOSIT_1("Ore_Deposit_1", 0.0, Mobility.OPEN_PLAINS),
+    ORE_DEPOSIT_2("Ore_Deposit_2", 0.0, Mobility.OPEN_PLAINS),
+    DEPLETED_ORE_DEPOSIT_1("Depleted_Ore_Deposit_1", 0.0, Mobility.OPEN_PLAINS),
+    DEPLETED_ORE_DEPOSIT_2("Depleted_Ore_Deposit_2", 0.0, Mobility.OPEN_PLAINS),
+    REEF_2("Reef_2", 0.0, Mobility.REEF_SURFACE),
+    REEF_3("Reef_3", 0.0, Mobility.REEF_SURFACE),
+    REEF_4("Reef_4", 0.0, Mobility.REEF_SURFACE),
+    ROCK_FORMATION_2("Rock_Formation_2", 0.35, Mobility.MOUNTAIN_PEAK),
+    ROCK_FORMATION_3("Rock_Formation_3", 0.35, Mobility.MOUNTAIN_PEAK),
+    ROCK_FORMATION_4("Rock_Formation_4", 0.35, Mobility.MOUNTAIN_PEAK),
+    SEA_DOUBLE_LEFTDOWN("Sea_Double_LeftDown", 0.0, Mobility.SEA_SURFACE),
+    SEA_DOUBLE_LEFTDOWN_ONE_RIGHTUP("Sea_Double_LeftDown_One_RightUp", 0.0, Mobility.SEA_SURFACE),
+    SEA_DOUBLE_LEFTRIGHT("Sea_Double_LeftRight", 0.0, Mobility.SEA_SURFACE),
+    SEA_DOUBLE_LEFTUP("Sea_Double_LeftUp", 0.0, Mobility.SEA_SURFACE),
+    SEA_DOUBLE_LEFTUP_ONE_RIGHTDOWN("Sea_Double_LeftUp_One_RightDown", 0.0, Mobility.SEA_SURFACE),
+    SEA_DOUBLE_RIGHTDOWN("Sea_Double_RightDown", 0.0, Mobility.SEA_SURFACE),
+    SEA_DOUBLE_RIGHTDOWN_ONE_LEFTUP("Sea_Double_RightDown_One_LeftUp", 0.0, Mobility.SEA_SURFACE),
+    SEA_DOUBLE_RIGHTUP("Sea_Double_RightUp", 0.0, Mobility.SEA_SURFACE),
+    SEA_DOUBLE_RIGHTUP_ONE_LEFTDOWN("Sea_Double_RightUp_One_LeftDown", 0.0, Mobility.SEA_SURFACE),
+    SEA_DOUBLE_UPDOWN("Sea_Double_UpDown", 0.0, Mobility.SEA_SURFACE),
+    SEA_ONE_LEFTDOWN("Sea_One_LeftDown", 0.0, Mobility.SEA_SURFACE),
+    SEA_ONE_LEFTUP("Sea_One_LeftUp", 0.0, Mobility.SEA_SURFACE),
+    SEA_ONE_LEFTUP_ONE_LEFTDOWN("Sea_One_LeftUp_One_LeftDown", 0.0, Mobility.SEA_SURFACE),
+    SEA_ONE_LEFTUP_ONE_LEFTDOWN_ONE_RIGHTDOWN("Sea_One_LeftUp_One_LeftDown_One_RightDown", 0.0, Mobility.SEA_SURFACE),
+    SEA_ONE_LEFTUP_ONE_LEFTDOWN_ONE_RIGHTUP("Sea_One_LeftUp_One_LeftDown_One_RightUp", 0.0, Mobility.SEA_SURFACE),
+    SEA_ONE_LEFTUP_ONE_LEFTDOWN_ONE_RIGHTUP_ONE_RIGHTDOWN(
+            "Sea_One_LeftUp_One_LeftDown_One_RightUp_One_RightDown", 0.0, Mobility.SEA_SURFACE),
+    SEA_ONE_LEFTUP_ONE_RIGHTDOWN("Sea_One_LeftUp_One_RightDown", 0.0, Mobility.SEA_SURFACE),
+    SEA_ONE_LEFTUP_ONE_RIGHTUP("Sea_One_LeftUp_One_RightUp", 0.0, Mobility.SEA_SURFACE),
+    SEA_ONE_LEFTUP_ONE_RIGHTUP_ONE_RIGHTDOWN("Sea_One_LeftUp_One_RightUp_One_RightDown", 0.0, Mobility.SEA_SURFACE),
+    SEA_ONE_RIGHTDOWN("Sea_One_RightDown", 0.0, Mobility.SEA_SURFACE),
+    SEA_ONE_RIGHTUP("Sea_One_RightUp", 0.0, Mobility.SEA_SURFACE),
+    SEA_ONE_RIGHTUP_ONE_RIGHTDOWN("Sea_One_RightUp_One_RightDown", 0.0, Mobility.SEA_SURFACE),
+    SEA_QUADRUPLE_LEFTRIGHTUPDOWN("Sea_Quadruple_LeftRightUpDown", 0.0, Mobility.SEA_SURFACE),
+    SEA_SINGLE_DOWN("Sea_Single_Down", 0.0, Mobility.SEA_SURFACE),
+    SEA_SINGLE_DOWN_ONE_LEFTUP("Sea_Single_Down_One_LeftUp", 0.0, Mobility.SEA_SURFACE),
+    SEA_SINGLE_DOWN_ONE_LEFTUP_ONE_RIGHTUP("Sea_Single_Down_One_LeftUp_One_RightUp", 0.0, Mobility.SEA_SURFACE),
+    SEA_SINGLE_DOWN_ONE_RIGHTUP("Sea_Single_Down_One_RightUp", 0.0, Mobility.SEA_SURFACE),
+    SEA_SINGLE_LEFT("Sea_Single_Left", 0.0, Mobility.SEA_SURFACE),
+    SEA_SINGLE_LEFT_ONE_RIGHTDOWN("Sea_Single_Left_One_RightDown", 0.0, Mobility.SEA_SURFACE),
+    SEA_SINGLE_LEFT_ONE_RIGHTUP("Sea_Single_Left_One_RightUp", 0.0, Mobility.SEA_SURFACE),
+    SEA_SINGLE_LEFT_ONE_RIGHTUP_ONE_RIGHTDOWN("Sea_Single_Left_One_RightUp_One_RightDown", 0.0, Mobility.SEA_SURFACE),
+    SEA_SINGLE_RIGHT("Sea_Single_Right", 0.0, Mobility.SEA_SURFACE),
+    SEA_SINGLE_RIGHT_ONE_LEFTDOWN("Sea_Single_Right_One_LeftDown", 0.0, Mobility.SEA_SURFACE),
+    SEA_SINGLE_RIGHT_ONE_LEFTUP("Sea_Single_Right_One_LeftUp", 0.0, Mobility.SEA_SURFACE),
+    SEA_SINGLE_RIGHT_ONE_LEFTUP_ONE_LEFTDOWN("Sea_Single_Right_One_LeftUp_One_LeftDown", 0.0, Mobility.SEA_SURFACE),
+    SEA_SINGLE_UP("Sea_Single_Up", 0.0, Mobility.SEA_SURFACE),
+    SEA_SINGLE_UP_ONE_LEFTDOWN("Sea_Single_Up_One_LeftDown", 0.0, Mobility.SEA_SURFACE),
+    SEA_SINGLE_UP_ONE_LEFTDOWN_ONE_RIGHTDOWN("Sea_Single_Up_One_LeftDown_One_RightDown", 0.0, Mobility.SEA_SURFACE),
+    SEA_SINGLE_UP_ONE_RIGHTDOWN("Sea_Single_Up_One_RightDown", 0.0, Mobility.SEA_SURFACE),
+    SEA_TRIPLE_LEFTRIGHTDOWN("Sea_Triple_LeftRightDown", 0.0, Mobility.SEA_SURFACE),
+    SEA_TRIPLE_LEFTRIGHTUP("Sea_Triple_LeftRightUp", 0.0, Mobility.SEA_SURFACE),
+    SEA_TRIPLE_LEFTUPDOWN("Sea_Triple_LeftUpDown", 0.0, Mobility.SEA_SURFACE),
+    SEA_TRIPLE_RIGHTUPDOWN("Sea_Triple_RightUpDown", 0.0, Mobility.SEA_SURFACE),
+    SHORE_SINGLE_RIGHT("Shore_Single_Right", 0.0, Mobility.SHORE_EDGE),
+    SHORE_SINGLE_UP("Shore_Single_Up", 0.0, Mobility.SHORE_EDGE),
+    VOLCANO("Volcano", 0.35, Mobility.NONE),
+    WASTELAND("Wasteland", 0.0, Mobility.OPEN_PLAINS);
 
     private final String assetStem;
     private final double defenseModifier;
@@ -79,7 +147,8 @@ public enum TerrainType {
     }
 
     /**
-     * PNG file name stem under {@code /assets/terrain/} (matches on-disk casing).
+     * PNG file name stem under {@code /assets/terrain/} or {@code /assets/terrain/animated/}
+     * (matches on-disk casing).
      */
     public String assetStem() {
         return assetStem;
@@ -151,7 +220,40 @@ public enum TerrainType {
         return name().contains("CANYON");
     }
 
+    /** Rich ore: two drill payouts (to regular ore, then to depleted) before exhausted. */
+    public boolean isEnrichedOreDepositTerrain() {
+        return this == ENRICHED_ORE_DEPOSIT_1 || this == ENRICHED_ORE_DEPOSIT_2;
+    }
+
+    /** Standard ore: one drill payout before depleted. */
+    public boolean isRegularOreDepositTerrain() {
+        return this == ORE_DEPOSIT_1 || this == ORE_DEPOSIT_2;
+    }
+
+    public boolean isDepletedOreDepositTerrain() {
+        return this == DEPLETED_ORE_DEPOSIT_1 || this == DEPLETED_ORE_DEPOSIT_2;
+    }
+
+    /** Ore terrain that still pays out when a Warmachine drills here. */
+    public boolean isWarmachineDrillableOreTerrain() {
+        return isEnrichedOreDepositTerrain() || isRegularOreDepositTerrain();
+    }
+
     private enum Mobility {
+        NONE {
+            @Override
+            int movementCost(MovementKind k) {
+                return Integer.MAX_VALUE;
+            }
+            @Override
+            boolean canTraverse(MovementKind k) {
+                return false;
+            }
+            @Override
+            Color fallbackColor() {
+                return new Color(230, 0, 0);
+            }
+        },
         OPEN_PLAINS {
             @Override
             int movementCost(MovementKind k) {
@@ -336,7 +438,7 @@ public enum TerrainType {
 
             @Override
             boolean canTraverse(MovementKind k) {
-                return k == MovementKind.AIR && k == MovementKind.NAVAL;
+                return k == MovementKind.AIR || k == MovementKind.NAVAL;
             }
 
             @Override

@@ -20,10 +20,10 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$prefix = "Modern-Red-"
+$prefix = "Modern-"
 
 if ([string]::IsNullOrWhiteSpace($Directory)) {
-    $Directory = Join-Path $PSScriptRoot "..\src\main\resources\assets\structures"
+    $Directory = "C:\Users\Thijssenj\Projects\BattalionRevival\battalion-browser\public\assets\terrain\animated"
 }
 $Directory = [System.IO.Path]::GetFullPath($Directory)
 

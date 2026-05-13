@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { UnitAppearancePicker } from "@/components/shell/UnitAppearancePicker";
 
 const links: { href: string; label: string }[] = [
   { href: "/play", label: "Play" },
@@ -11,12 +12,14 @@ const links: { href: string; label: string }[] = [
 
 export function MainNav() {
   return (
-    <header className="border-b border-zinc-800 bg-zinc-950/80 backdrop-blur">
+    <header className="relative z-50 border-b border-zinc-800 bg-zinc-950/80 backdrop-blur">
         <div className="mx-auto flex max-w-screen-2xl flex-wrap items-center justify-between gap-3 px-4 py-3">
-        <Link href="/" className="text-lg font-semibold tracking-tight text-zinc-100">
+        <Link href="/" className="text-lg font-semibold tracking-tight text-zinc-100 bg-red-800 p-2 rounded-md">
           Battalion Revival
         </Link>
-        <nav className="flex flex-wrap items-center gap-1 sm:gap-2">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+          <UnitAppearancePicker />
+          <nav className="flex flex-wrap items-center gap-1 sm:gap-2">
           {links.map(({ href, label }) => (
             <Link
               key={href}
@@ -26,7 +29,8 @@ export function MainNav() {
               {label}
             </Link>
           ))}
-        </nav>
+          </nav>
+        </div>
       </div>
     </header>
   );

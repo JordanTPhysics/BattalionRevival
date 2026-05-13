@@ -1,10 +1,21 @@
 /**
  * Mirrors {@link com.game.model.map.TerrainType} mobility for pathfinding preview.
- * Archipelago Java {@code canTraverse} is effectively broken (AIR && NAVAL); we use AIR || NAVAL.
  */
 import type { MovementKind } from "@/lib/game/unitTypeCatalog";
 
 const INF = Number.MAX_SAFE_INTEGER;
+
+function isSeaTerrain(name: string): boolean {
+  return name.startsWith("SEA_");
+}
+
+function isReefTerrain(name: string): boolean {
+  return name.startsWith("REEF_");
+}
+
+function isArchipelagoTerrain(name: string): boolean {
+  return name.startsWith("ARCHIPELAGO_");
+}
 
 function isShoreTerrain(name: string): boolean {
   return name.startsWith("SHORE_");
@@ -46,32 +57,32 @@ export function canTraverseKind(terrain: string, kind: MovementKind): boolean {
       if (terrain.startsWith("HIGH_BRIDGE_")) {
         return true;
       }
-      if (terrain === "SEA_MAIN" || terrain === "REEF_1" || terrain === "ARCHIPELAGO_2") {
+      if (isSeaTerrain(terrain) || isReefTerrain(terrain) || isArchipelagoTerrain(terrain)) {
         return true;
       }
       return terrain.startsWith("SHORE_");
     }
     case "FOOT": {
-      if (terrain === "MOUNTAINS_1" || terrain === "ROCK_FORMATION_1") {
+      if (terrain === "MOUNTAINS_1" || terrain === "VOLCANO" || terrain.startsWith("ROCK_FORMATION_")) {
         return true;
       }
-      if (terrain === "SEA_MAIN" || terrain === "REEF_1") {
+      if (isSeaTerrain(terrain) || isReefTerrain(terrain)) {
         return false;
       }
-      if (terrain === "ARCHIPELAGO_2") {
+      if (isArchipelagoTerrain(terrain)) {
         return false;
       }
       return true;
     }
     case "WHEELED":
     case "TRACKED": {
-      if (terrain === "MOUNTAINS_1" || terrain === "ROCK_FORMATION_1") {
+      if (terrain === "MOUNTAINS_1" || terrain === "VOLCANO" || terrain.startsWith("ROCK_FORMATION_")) {
         return false;
       }
-      if (terrain === "SEA_MAIN" || terrain === "REEF_1") {
+      if (isSeaTerrain(terrain) || isReefTerrain(terrain)) {
         return false;
       }
-      if (terrain === "ARCHIPELAGO_2") {
+      if (isArchipelagoTerrain(terrain)) {
         return false;
       }
       return true;
@@ -90,13 +101,13 @@ export function movementCostForKind(terrain: string, kind: MovementKind): number
       if (!canTraverseKind(terrain, kind)) {
         return INF;
       }
-      if (terrain === "REEF_1" || terrain === "ARCHIPELAGO_2") {
+      if (isReefTerrain(terrain) || isArchipelagoTerrain(terrain)) {
         return 2;
       }
       return 1;
     }
     case "FOOT": {
-      if (terrain === "MOUNTAINS_1" || terrain === "ROCK_FORMATION_1") {
+      if (terrain === "MOUNTAINS_1" || terrain === "VOLCANO" || terrain.startsWith("ROCK_FORMATION_")) {
         return 3;
       }
       return landCost(terrain, kind);

@@ -306,8 +306,12 @@ public class AssetManager {
 
     private void loadTerrainImages() {
         for (TerrainType terrainType : TerrainType.values()) {
-            String resourcePath = TERRAIN_PATH + terrainType.assetStem() + ".png";
-            terrainImages.put(terrainType, loadImage(resourcePath));
+            String stem = terrainType.assetStem() + ".png";
+            Image img = loadImage(TERRAIN_PATH + stem);
+            if (img == null) {
+                img = loadImage(TERRAIN_PATH + "animated/" + stem);
+            }
+            terrainImages.put(terrainType, img);
         }
     }
 

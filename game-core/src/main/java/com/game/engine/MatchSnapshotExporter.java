@@ -56,6 +56,8 @@ public final class MatchSnapshotExporter {
                         lastMovePath.add(new GridPoint(step.x, step.y));
                     }
                 }
+                Unit hostTransport = u.getEmbarkedInTransport();
+                String embarkedInTransportUnitId = hostTransport != null ? hostTransport.getId() : null;
                 units.add(new UnitSnapshot(
                     u.getId(),
                     u.getUnitType().name(),
@@ -67,7 +69,10 @@ public final class MatchSnapshotExporter {
                     u.isCloaked(),
                     face.name(),
                     u.getUnitType() == UnitType.Warmachine ? u.getWarmachineFunds() : null,
-                    lastMovePath
+                    lastMovePath,
+                    u.getFieldRepairStartedRound(),
+                    embarkedInTransportUnitId,
+                    u.isInTransportForm() ? u.getOriginalUnitType().name() : null
                 ));
             }
         }

@@ -1,6 +1,8 @@
 import { Texture } from "pixi.js";
 import { copyEastFrameToCanvas } from "@/lib/game/eastFrameCrop";
-import { applyTeamColorMaskToImageData } from "@/lib/game/teamMaskRecolor";
+import { applyTeamPaintStyleToImageData } from "@/lib/game/teamMaskRecolor";
+import type { TeamPaintStyle } from "@/lib/game/teamPaintStyle";
+import { teamPaintStyleCacheKey } from "@/lib/game/teamPaintStyle";
 
 function loadImage(src: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
@@ -12,7 +14,7 @@ function loadImage(src: string): Promise<HTMLImageElement> {
   });
 }
 
-function canvasToTeamTexture(source: HTMLCanvasElement, teamRgb: number): Texture {
+function canvasToTeamTexture(source: HTMLCanvasElement, paint: TeamPaintStyle): Texture {
   const w = source.width;
   const h = source.height;
   const out = document.createElement("canvas");
@@ -22,7 +24,7 @@ function canvasToTeamTexture(source: HTMLCanvasElement, teamRgb: number): Textur
   if (!ctx) return Texture.from(source);
   ctx.drawImage(source, 0, 0);
   const id = ctx.getImageData(0, 0, w, h);
-  applyTeamColorMaskToImageData(id, teamRgb);
+  applyTeamPaintStyleToImageData(id, paint);
   ctx.putImageData(id, 0, 0);
   return Texture.from(out);
 }
@@ -48,14 +50,14 @@ const eastFrameTeamTextureCache = new Map<string, Texture>();
 /** Uncoloured unit PNG (6×N strip or single image); team mask applied after east-frame crop. */
 export async function getUncolouredEastFrameTeamTexture(
   uncolouredUnitUrl: string,
-  teamRgb: number
+  paint: TeamPaintStyle
 ): Promise<Texture | null> {
-  const cacheKey = `${uncolouredUnitUrl}\0${teamRgb}`;
+  const cacheKey = `${uncolouredUnitUrl}\0${teamPaintStyleCacheKey(paint)}`;
   const cached = eastFrameTeamTextureCache.get(cacheKey);
   if (cached) return cached;
   const base = await getEastFrameBaseCanvas(uncolouredUnitUrl);
   if (!base) return null;
-  const tex = canvasToTeamTexture(base, teamRgb);
+  const tex = canvasToTeamTexture(base, paint);
   eastFrameTeamTextureCache.set(cacheKey, tex);
   return tex;
 }
@@ -65,9 +67,9 @@ const fullImageTeamTextureCache = new Map<string, Texture>();
 /** Full-image uncoloured structure (or unit) PNG; team mask applied to whole bitmap. */
 export async function getUncolouredFullImageTeamTexture(
   uncolouredUrl: string,
-  teamRgb: number
+  paint: TeamPaintStyle
 ): Promise<Texture | null> {
-  const cacheKey = `${uncolouredUrl}\0${teamRgb}`;
+  const cacheKey = `${uncolouredUrl}\0${teamPaintStyleCacheKey(paint)}`;
   const cached = fullImageTeamTextureCache.get(cacheKey);
   if (cached) return cached;
   try {
@@ -78,7 +80,7 @@ export async function getUncolouredFullImageTeamTexture(
     const ctx = canvas.getContext("2d");
     if (!ctx) return null;
     ctx.drawImage(img, 0, 0);
-    const tex = canvasToTeamTexture(canvas, teamRgb);
+    const tex = canvasToTeamTexture(canvas, paint);
     fullImageTeamTextureCache.set(cacheKey, tex);
     return tex;
   } catch {

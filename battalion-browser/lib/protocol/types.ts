@@ -10,6 +10,12 @@ export type NetEnvelopeKind =
   | "CS_FACTORY_BUILD"
   | "CS_WARMACHINE_BUILD"
   | "CS_WARMACHINE_DRILL"
+  | "CS_UNIT_REPAIR"
+  | "CS_TRANSPORT_PICKUP"
+  | "CS_TRANSPORT_DISEMBARK"
+  | "CS_CONVERT_TO_ALBATROSS"
+  | "CS_CONVERT_TO_LEVIATHAN"
+  | "CS_REVERT_TRANSPORT"
   | "CS_END_TURN"
   | "CS_SURRENDER"
   | "CS_PING"
@@ -54,6 +60,12 @@ export interface UnitSnapshot {
   warmachineFunds: number | null;
   /** Authoritative path for the last move step (tile-by-tile); use for animation when present. */
   lastMovePathIncludingStart?: GridPoint[] | null;
+  /** Schema v3+: pending field repair (round number when started). */
+  fieldRepairStartedRound?: number | null;
+  /** Schema v3+: when set, unit is cargo inside this transport id (not on its own tile). */
+  embarkedInTransportUnitId?: string | null;
+  /** When unitType is Albatross/Leviathan after morph, the prior land unit type (revert UX / rules). */
+  originalLandUnitType?: string | null;
 }
 
 export interface MatchSnapshot {
@@ -152,6 +164,56 @@ export interface CsWarmachineBuild {
   unitType: string;
 }
 
+export interface CsWarmachineDrill {
+  kind: "CS_WARMACHINE_DRILL";
+  protocolVersion: number;
+  matchId: string;
+  warmachineUnitId: string;
+}
+
+export interface CsUnitRepair {
+  kind: "CS_UNIT_REPAIR";
+  protocolVersion: number;
+  matchId: string;
+  unitId: string;
+}
+
+export interface CsTransportPickup {
+  kind: "CS_TRANSPORT_PICKUP";
+  protocolVersion: number;
+  matchId: string;
+  transportUnitId: string;
+  passengerUnitId: string;
+}
+
+export interface CsTransportDisembark {
+  kind: "CS_TRANSPORT_DISEMBARK";
+  protocolVersion: number;
+  matchId: string;
+  transportUnitId: string;
+}
+
+export interface CsConvertToAlbatross {
+  kind: "CS_CONVERT_TO_ALBATROSS";
+  protocolVersion: number;
+  matchId: string;
+  unitId: string;
+}
+
+export interface CsConvertToLeviathan {
+  kind: "CS_CONVERT_TO_LEVIATHAN";
+  protocolVersion: number;
+  matchId: string;
+  unitId: string;
+}
+
+export interface CsRevertTransport {
+  kind: "CS_REVERT_TRANSPORT";
+  protocolVersion: number;
+  matchId: string;
+  unitId: string;
+}
+
 export interface CsEndTurn {
   kind: "CS_END_TURN";
   protocolVersion: number;
@@ -171,6 +233,13 @@ export type NetEnvelope =
   | CsMoveAndAttackUnit
   | CsFactoryBuild
   | CsWarmachineBuild
+  | CsWarmachineDrill
+  | CsUnitRepair
+  | CsTransportPickup
+  | CsTransportDisembark
+  | CsConvertToAlbatross
+  | CsConvertToLeviathan
+  | CsRevertTransport
   | CsEndTurn
   | CsSurrender
   | ScWelcome

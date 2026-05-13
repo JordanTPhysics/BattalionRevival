@@ -892,13 +892,12 @@ public class GameWindow extends JFrame {
         }
 
         /**
-         * Builds the context-menu options offered for {@code unit}. Currently exposes the
-         * transport conversions: foot units may morph into Albatross; ground units on a coastal
-         * shore tile may morph into Leviathan; converted transports may revert when the terrain
-         * under them is traversable for the original land-unit type.
+         * Context menu for the active player's unit: War Machine production/drill, field repair,
+         * transport pickup/disembark, and Albatross / Leviathan morph or revert.
          */
         private JPopupMenu buildUnitContextMenu(Unit unit) {
             JPopupMenu menu = new JPopupMenu();
+            OnlineMatchCoordinator coord = GameWindow.this.onlineCoordinator;
             if (unit.getUnitType() == UnitType.Warmachine && session.canUnitMove(unit)) {
                 JMenuItem fab = new JMenuItem("Fabricate unit\u2026");
                 fab.addActionListener(ev -> {
@@ -931,10 +930,73 @@ public class GameWindow extends JFrame {
                 });
                 menu.add(drill);
             }
+            if (session.canStartFieldRepair(unit)) {
+                JMenuItem rep = new JMenuItem(
+                    "Field repair (no move this turn; heal \u00bc max HP next turn if not hit; +20% damage if hit)");
+                rep.addActionListener(ev -> {
+                    if (coord != null) {
+                        coord.requestUnitRepair(unit.getId());
+                    } else if (session.tryStartFieldRepair(unit)) {
+                        refreshAfterTransportConversion(unit);
+                    }
+                });
+                menu.add(rep);
+            }
+            if (session.canTransportDisembark(unit)) {
+                Unit cargo = unit.getEmbarkedPassenger();
+                JMenuItem dis = new JMenuItem(
+                    "Disembark " + (cargo != null ? prettyTypeName(cargo.getUnitType()) : "cargo"));
+                final Unit transportForDis = unit;
+                final Unit passengerPreview = cargo;
+                dis.addActionListener(ev -> {
+                    if (coord != null) {
+                        coord.requestTransportDisembark(transportForDis.getId());
+                    } else if (passengerPreview != null && session.tryTransportDisembark(transportForDis)) {
+                        refreshAfterTransportConversion(transportForDis);
+                        int cx = passengerPreview.getPosition().getX();
+                        int cy = passengerPreview.getPosition().getY();
+                        if (selectedCell != null && selectedCell.x == cx && selectedCell.y == cy) {
+                            recomputeHighlightsForUnit(passengerPreview);
+                        }
+                        selectionConsumer.accept(new SelectionInfo(cx, cy, map.getTile(cx, cy)));
+                        repaint();
+                    }
+                });
+                menu.add(dis);
+            }
+            int ux = unit.getPosition().getX();
+            int uy = unit.getPosition().getY();
+            String[] dirLabels = {"north", "east", "south", "west"};
+            int[][] ortho = {{0, -1}, {1, 0}, {0, 1}, {-1, 0}};
+            for (int i = 0; i < ortho.length; i++) {
+                int nx = ux + ortho[i][0];
+                int ny = uy + ortho[i][1];
+                Tile nt = map.getTile(nx, ny);
+                if (nt == null) {
+                    continue;
+                }
+                Unit neighbor = nt.getUnit();
+                if (neighbor == null || !session.canTransportPickup(unit, neighbor)) {
+                    continue;
+                }
+                String label = "Pick up " + prettyTypeName(neighbor.getUnitType()) + " (" + dirLabels[i] + ")";
+                final Unit pass = neighbor;
+                JMenuItem pick = new JMenuItem(label);
+                pick.addActionListener(ev -> {
+                    if (coord != null) {
+                        coord.requestTransportPickup(unit.getId(), pass.getId());
+                    } else if (session.tryTransportPickup(unit, pass)) {
+                        refreshAfterTransportConversion(unit);
+                    }
+                });
+                menu.add(pick);
+            }
             if (session.canConvertUnitToAlbatross(unit)) {
                 JMenuItem item = new JMenuItem("Convert to Albatross (sky transport)");
                 item.addActionListener(ev -> {
-                    if (session.convertUnitToAlbatross(unit)) {
+                    if (coord != null) {
+                        coord.requestConvertToAlbatross(unit.getId());
+                    } else if (session.convertUnitToAlbatross(unit)) {
                         refreshAfterTransportConversion(unit);
                     }
                 });
@@ -943,7 +1005,9 @@ public class GameWindow extends JFrame {
             if (session.canConvertUnitToLeviathan(unit)) {
                 JMenuItem item = new JMenuItem("Convert to Leviathan (sea transport)");
                 item.addActionListener(ev -> {
-                    if (session.convertUnitToLeviathan(unit)) {
+                    if (coord != null) {
+                        coord.requestConvertToLeviathan(unit.getId());
+                    } else if (session.convertUnitToLeviathan(unit)) {
                         refreshAfterTransportConversion(unit);
                     }
                 });
@@ -953,7 +1017,9 @@ public class GameWindow extends JFrame {
                 UnitType origin = unit.getOriginalUnitType();
                 JMenuItem item = new JMenuItem("Disembark to " + prettyTypeName(origin));
                 item.addActionListener(ev -> {
-                    if (session.revertTransport(unit)) {
+                    if (coord != null) {
+                        coord.requestRevertTransport(unit.getId());
+                    } else if (session.revertTransport(unit)) {
                         refreshAfterTransportConversion(unit);
                     }
                 });

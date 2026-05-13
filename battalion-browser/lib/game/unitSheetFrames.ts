@@ -8,7 +8,9 @@ import {
   UNIT_SHEET_CELL_TRIM_INSET,
   UNIT_SHEET_CELL_TRIM_SIZE,
 } from "@/lib/game/unitSpriteSheet";
-import { applyTeamColorMaskToImageData } from "@/lib/game/teamMaskRecolor";
+import { applyTeamPaintStyleToImageData } from "@/lib/game/teamMaskRecolor";
+import type { TeamPaintStyle } from "@/lib/game/teamPaintStyle";
+import { teamPaintStyleCacheKey } from "@/lib/game/teamPaintStyle";
 import { uncolouredAttackSheetUrl, uncolouredMovementSheetUrl, uncolouredUnitTextureUrl } from "@/lib/game/renderPaths";
 
 const ATTACK_ROWS_MANIFEST_URL = "/assets/units/attack/attack_rows.json";
@@ -64,10 +66,10 @@ function isUncolouredAttackSheetUrl(sheetUrl: string): boolean {
   return sheetUrl.includes("/units/attack/uncoloured/");
 }
 
-function texKey(sheetUrl: string, row: number, col: number, teamRgb: number): string {
+function texKey(sheetUrl: string, row: number, col: number, paint: TeamPaintStyle): string {
   /** Bump when crop / masking changes so {@code textureCache} misses old full-cell bitmaps. */
   const cropRev = `trim${UNIT_SHEET_CELL_TRIM_INSET}_${UNIT_SHEET_CELL_TRIM_SIZE}`;
-  return `${sheetUrl}\0${row}\0${col}\0${teamRgb}\0${cropRev}`;
+  return `${sheetUrl}\0${row}\0${col}\0${teamPaintStyleCacheKey(paint)}\0${cropRev}`;
 }
 
 async function computeLayoutForImage(
@@ -146,7 +148,7 @@ export async function pickUnitSheetUrl(
 /** Crops + team-masks one sheet cell to a canvas (no Pixi texture cache). */
 function buildMaskedSheetFrameCanvas(
   sheetUrl: string,
-  teamRgb: number,
+  paint: TeamPaintStyle,
   row: number,
   col: number
 ): HTMLCanvasElement | null {
@@ -189,7 +191,7 @@ function buildMaskedSheetFrameCanvas(
   if (!ctx) return null;
   ctx.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh);
   const id = ctx.getImageData(0, 0, sw, sh);
-  applyTeamColorMaskToImageData(id, teamRgb);
+  applyTeamPaintStyleToImageData(id, paint);
   ctx.putImageData(id, 0, 0);
   return canvas;
 }
@@ -199,7 +201,7 @@ function buildMaskedSheetFrameCanvas(
  */
 export async function getMovementSheetFirstFrameDataUrl(
   unitType: string,
-  teamRgb: number
+  paint: TeamPaintStyle
 ): Promise<string | null> {
   const { url, layout } = await pickUnitSheetUrl(unitType, "move");
   if (!layout) {
@@ -207,7 +209,7 @@ export async function getMovementSheetFirstFrameDataUrl(
   }
   const row = sheetRowForAnimation(0, layout.rows);
   const col = sheetColumnForAnimation("EAST", 0);
-  const canvas = buildMaskedSheetFrameCanvas(url, teamRgb, row, col);
+  const canvas = buildMaskedSheetFrameCanvas(url, paint, row, col);
   if (!canvas) {
     return null;
   }
@@ -223,15 +225,15 @@ export async function getMovementSheetFirstFrameDataUrl(
  */
 export function getMaskedSheetFrameTextureSync(
   sheetUrl: string,
-  teamRgb: number,
+  paint: TeamPaintStyle,
   row: number,
   col: number
 ): Texture | null {
-  const key = texKey(sheetUrl, row, col, teamRgb);
+  const key = texKey(sheetUrl, row, col, paint);
   const cached = textureCache.get(key);
   if (cached) return cached;
 
-  const canvas = buildMaskedSheetFrameCanvas(sheetUrl, teamRgb, row, col);
+  const canvas = buildMaskedSheetFrameCanvas(sheetUrl, paint, row, col);
   if (!canvas) return null;
   const tex = Texture.from(canvas);
   textureCache.set(key, tex);

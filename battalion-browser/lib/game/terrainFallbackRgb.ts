@@ -67,6 +67,36 @@ const BY_TERRAIN_NAME: Record<string, number> = {
 
 const DEFAULT = OPEN;
 
+function terrainFallbackRgbFromPrefixes(terrainEnumName: string): number | undefined {
+  if (terrainEnumName.startsWith("SEA_")) {
+    return SEA;
+  }
+  if (terrainEnumName.startsWith("REEF_")) {
+    return REEF;
+  }
+  if (terrainEnumName.startsWith("ARCHIPELAGO_")) {
+    return ARCHIPELAGO;
+  }
+  if (terrainEnumName.startsWith("SHORE_")) {
+    return SHORE;
+  }
+  if (terrainEnumName.startsWith("DEPLETED_ORE_DEPOSIT")) {
+    return 0x8b7d6b;
+  }
+  if (terrainEnumName.startsWith("ORE_DEPOSIT") || terrainEnumName.startsWith("ENRICHED_ORE_DEPOSIT")) {
+    return OPEN;
+  }
+  if (terrainEnumName === "VOLCANO" || terrainEnumName.startsWith("ROCK_FORMATION_")) {
+    return MOUNTAIN;
+  }
+  if (terrainEnumName === "WASTELAND") {
+    return OPEN;
+  }
+  return undefined;
+}
+
 export function terrainFallbackRgb(terrainEnumName: string): number {
-  return BY_TERRAIN_NAME[terrainEnumName] ?? DEFAULT;
+  return (
+    BY_TERRAIN_NAME[terrainEnumName] ?? terrainFallbackRgbFromPrefixes(terrainEnumName) ?? DEFAULT
+  );
 }

@@ -38,6 +38,17 @@ class NetEnvelopeJsonTest {
     }
 
     @Test
+    void receive_csUnitRepair_deserializesAndRoundTrips() throws JsonProcessingException {
+        String json = "{\"kind\":\"CS_UNIT_REPAIR\",\"protocolVersion\":1,\"matchId\":\"m-1\",\"unitId\":\"u-9\"}";
+        NetEnvelope env = ProtocolJson.readNetEnvelope(json);
+        CsUnitRepair r = assertInstanceOf(CsUnitRepair.class, env);
+        assertEquals(1, r.protocolVersion());
+        assertEquals("m-1", r.matchId());
+        assertEquals("u-9", r.unitId());
+        assertEquals(env, ProtocolJson.readNetEnvelope(ProtocolJson.write(r)));
+    }
+
+    @Test
     void receive_csEndTurn_deserializesAndRoundTrips() throws JsonProcessingException {
         String json = "{\"kind\":\"CS_END_TURN\",\"protocolVersion\":1,\"matchId\":\"m-1\"}";
         NetEnvelope env = ProtocolJson.readNetEnvelope(json);
