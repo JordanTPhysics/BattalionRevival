@@ -23,6 +23,11 @@ import {
   getUncolouredFullImageTeamTexture,
 } from "@/lib/game/uncolouredTextures";
 import { useEditorStore } from "@/stores/editorStore";
+import {
+  isAnimatedTerrainSheetUrl,
+  loadTerrainStripFrameTextures,
+  terrainStripFrameIndex,
+} from "@/lib/game/terrainAnimatedSheet";
 
 const PANEL_BG = 0x222831;
 const MAP_BG = 0x1c222a;
@@ -116,6 +121,7 @@ export function EditorBoardCanvas({ className }: EditorBoardCanvasProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const panRootRef = useRef<Container | null>(null);
   const appReadyRef = useRef(false);
+  const editorTerrainAnimSpritesRef = useRef<{ sprite: Sprite; frames: Texture[] }[]>([]);
 
   const spaceHeld = useRef(false);
   const panDragging = useRef(false);
@@ -422,8 +428,22 @@ export function EditorBoardCanvas({ className }: EditorBoardCanvasProps) {
           }
         };
 
+        const tickEditorTerrainStrip = (): void => {
+          const list = editorTerrainAnimSpritesRef.current;
+          if (list.length === 0) return;
+          const fi = terrainStripFrameIndex(performance.now());
+          for (const ent of list) {
+            const nx = ent.frames[fi]!;
+            if (ent.sprite.texture !== nx) {
+              ent.sprite.texture = nx;
+            }
+          }
+        };
+        app.ticker.add(tickEditorTerrainStrip);
+
         teardown = () => {
           try {
+            app.ticker.remove(tickEditorTerrainStrip);
             app.stage.off("pointerdown", onDown);
             app.stage.off("pointerup", onUp);
             app.stage.off("pointerupoutside", onUp);
@@ -485,6 +505,7 @@ export function EditorBoardCanvas({ className }: EditorBoardCanvasProps) {
 
     void (async () => {
       panRoot.removeChildren();
+      editorTerrainAnimSpritesRef.current.length = 0;
 
       const board = new Container();
       panRoot.addChild(board);
@@ -519,7 +540,14 @@ export function EditorBoardCanvas({ className }: EditorBoardCanvasProps) {
 
           const tUrl = terrainTextureUrl(tile.terrain);
           const fb = fallbackTerrainRgb(tile.terrain);
-          const tTex = await pooledTexture(tUrl, () => solidTexture(fb, ts, ts));
+          let tTex: Texture;
+          let animFrames: Texture[] | null = null;
+          if (isAnimatedTerrainSheetUrl(tUrl)) {
+            animFrames = await loadTerrainStripFrameTextures(tUrl, fb);
+            tTex = animFrames[0]!;
+          } else {
+            tTex = await pooledTexture(tUrl, () => solidTexture(fb, ts, ts));
+          }
 
           const iw = texNaturalW(tTex);
           const ih = texNaturalH(tTex);
@@ -540,6 +568,9 @@ export function EditorBoardCanvas({ className }: EditorBoardCanvasProps) {
           tr.x = px;
           tr.y = py + ts - drawH;
           board.addChild(tr);
+          if (animFrames != null) {
+            editorTerrainAnimSpritesRef.current.push({ sprite: tr, frames: animFrames });
+          }
 
           const edge = new Graphics();
           edge.rect(px, py, ts, ts);

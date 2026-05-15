@@ -55,6 +55,11 @@ public class AssetManager {
     private static final int UNIT_SHEET_COLUMNS = 6;
     /** Always 6×4 when sheet height is a multiple of 4 (including doubled-height PNGs — still four logical rows). */
     private static final int UNIT_SHEET_ROWS = 4;
+    /**
+     * Minimum total pixel width before treating a terrain PNG as a four-frame horizontal strip
+     * (avoids splitting small single-tile art such as 48×48).
+     */
+    public static final int MIN_TERRAIN_STRIP_TOTAL_WIDTH = 64;
 
     public AssetManager() {
         loadTerrainImages();
@@ -277,8 +282,23 @@ public class AssetManager {
         if (iw <= 0 || ih <= 0) {
             return;
         }
+        int logicalIw = iw;
+        int logicalIh = ih;
+        int sx1 = 0;
+        int sy1 = 0;
+        int sx2 = iw;
+        int sy2 = ih;
+        if (isFourFrameHorizontalTerrainStrip(iw, ih)) {
+            logicalIw = iw / 4;
+            logicalIh = ih;
+            int frame = (int) ((System.currentTimeMillis() / 1000L) % 4);
+            sx1 = frame * logicalIw;
+            sy1 = 0;
+            sx2 = sx1 + logicalIw;
+            sy2 = ih;
+        }
         int drawW = tileSize;
-        int drawH = Math.max(1, (int) Math.round(ih * (double) tileSize / (double) iw));
+        int drawH = Math.max(1, (int) Math.round(logicalIh * (double) tileSize / (double) logicalIw));
         if (uncoveredTopFill != null && drawH < tileSize) {
             int gapH = tileSize - drawH;
             g.setColor(uncoveredTopFill);
@@ -290,18 +310,29 @@ public class AssetManager {
             var hints = g2.getRenderingHints();
             try {
                 g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
-                g2.drawImage(terrainImage, dx, dy, drawW, drawH, null);
+                g2.drawImage(terrainImage, dx, dy, dx + drawW, dy + drawH, sx1, sy1, sx2, sy2, null);
             } finally {
                 g2.setRenderingHints(hints);
             }
         } else {
-            g.drawImage(terrainImage, dx, dy, drawW, drawH, null);
+            g.drawImage(terrainImage, dx, dy, dx + drawW, dy + drawH, sx1, sy1, sx2, sy2, null);
         }
     }
 
     /** @see #drawTerrainImageOnTile(Graphics, Image, int, int, int, Color) */
     public static void drawTerrainImageOnTile(Graphics g, Image terrainImage, int tilePixelX, int tilePixelY, int tileSize) {
         drawTerrainImageOnTile(g, terrainImage, tilePixelX, tilePixelY, tileSize, null);
+    }
+
+    /**
+     * Terrain sheets in {@code /assets/terrain/animated/} are four frames laid out left-to-right; each frame has
+     * width {@code fullWidth / 4} and height {@code fullHeight}.
+     */
+    public static boolean isFourFrameHorizontalTerrainStrip(int fullPixelWidth, int fullPixelHeight) {
+        return fullPixelWidth > 0
+            && fullPixelHeight > 0
+            && fullPixelWidth % 4 == 0
+            && fullPixelWidth >= MIN_TERRAIN_STRIP_TOTAL_WIDTH;
     }
 
     private void loadTerrainImages() {

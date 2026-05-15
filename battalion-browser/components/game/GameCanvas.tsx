@@ -72,6 +72,11 @@ import {
 } from "@/lib/game/unitSpriteSheet";
 import { getMaskedSheetFrameTextureSync, pickUnitSheetUrl } from "@/lib/game/unitSheetFrames";
 import { updateMovementPathFromHover } from "@/lib/game/movementPathHover";
+import {
+  isAnimatedTerrainSheetUrl,
+  loadTerrainStripFrameTextures,
+  terrainStripFrameIndex,
+} from "@/lib/game/terrainAnimatedSheet";
 
 const DEFAULT_STRUCTURE_COLOR = 0x6b4f2a;
 const DEFAULT_UNIT_COLOR = 0xc4c4c4;
@@ -841,6 +846,7 @@ export function GameCanvas({ snapshot, className, interaction }: GameCanvasProps
     if (!host) return;
 
     const unitAnimList = unitAnimsRef.current;
+    const animatedTerrainEntries: { sprite: Sprite; frames: Texture[] }[] = [];
 
     const app = new Application();
     const world = new Container();
@@ -854,8 +860,17 @@ export function GameCanvas({ snapshot, className, interaction }: GameCanvasProps
       world: { x: number; y: number };
     } | null = null;
     let pointerDown: { x: number; y: number; button: number } | null = null;
+    /** Bump to invalidate pending touch long-press timers. */
+    let longPressEpoch = 0;
+    let longPressTimer: ReturnType<typeof setTimeout> | null = null;
+    /** Global (canvas) coords at long-press start for slop cancel. */
+    let longPressAnchor: { x: number; y: number } | null = null;
+    const LONG_PRESS_MS = 560;
+    const LONG_PRESS_SLOP_PX = 14;
     let scale = 1;
     let placeholder: Text | null = null;
+    /** After pinch / long-press menu, ignore the following primary pointer release as a tap. */
+    let gestureSuppressTapUntil = 0;
 
     const drawTileTint = (
       gr: Graphics,
@@ -1375,6 +1390,13 @@ export function GameCanvas({ snapshot, className, interaction }: GameCanvasProps
             }
           }
         }
+        const stripI = terrainStripFrameIndex(performance.now());
+        for (const ent of animatedTerrainEntries) {
+          const t = ent.frames[stripI]!;
+          if (ent.sprite.texture !== t) {
+            ent.sprite.texture = t;
+          }
+        }
       });
     };
 
@@ -1536,6 +1558,7 @@ export function GameCanvas({ snapshot, className, interaction }: GameCanvasProps
       if (!app.renderer) return;
 
       unitAnimList.length = 0;
+      animatedTerrainEntries.length = 0;
       sequentialCtx = null;
       deferredExplosionState.victimIds.clear();
       deferredExplosionState.fired.clear();
@@ -1638,19 +1661,37 @@ export function GameCanvas({ snapshot, className, interaction }: GameCanvasProps
           const tile = row[x];
           const u = terrainTextureUrl(tile.terrain);
           const fallRgb = terrainFallbackRgb(tile.terrain);
-          const tex = await getTexture(u, () => loadOrFallback(u, fallRgb, TILE_PX, TILE_PX));
-          if (!app.renderer) return;
-          const drawH = terrainScaledDrawHeight(tex);
-          if (drawH < TILE_PX) {
-            const gap = TILE_PX - drawH;
-            const topFill = new Graphics();
-            topFill.rect(x * TILE_PX, y * TILE_PX, TILE_PX, gap);
-            topFill.fill({ color: fallRgb, alpha: 1 });
-            tilesRoot.addChild(topFill);
+          if (isAnimatedTerrainSheetUrl(u)) {
+            const frames = await loadTerrainStripFrameTextures(u, fallRgb);
+            const tex0 = frames[0]!;
+            if (!app.renderer) return;
+            const drawH = terrainScaledDrawHeight(tex0);
+            if (drawH < TILE_PX) {
+              const gap = TILE_PX - drawH;
+              const topFill = new Graphics();
+              topFill.rect(x * TILE_PX, y * TILE_PX, TILE_PX, gap);
+              topFill.fill({ color: fallRgb, alpha: 1 });
+              tilesRoot.addChild(topFill);
+            }
+            const s = new Sprite(tex0);
+            layoutTerrainSprite(s, tex0, x, y);
+            tilesRoot.addChild(s);
+            animatedTerrainEntries.push({ sprite: s, frames });
+          } else {
+            const tex = await getTexture(u, () => loadOrFallback(u, fallRgb, TILE_PX, TILE_PX));
+            if (!app.renderer) return;
+            const drawH = terrainScaledDrawHeight(tex);
+            if (drawH < TILE_PX) {
+              const gap = TILE_PX - drawH;
+              const topFill = new Graphics();
+              topFill.rect(x * TILE_PX, y * TILE_PX, TILE_PX, gap);
+              topFill.fill({ color: fallRgb, alpha: 1 });
+              tilesRoot.addChild(topFill);
+            }
+            const s = new Sprite(tex);
+            layoutTerrainSprite(s, tex, x, y);
+            tilesRoot.addChild(s);
           }
-          const s = new Sprite(tex);
-          layoutTerrainSprite(s, tex, x, y);
-          tilesRoot.addChild(s);
 
           if (tile.oreDeposit) {
             const og = new Graphics();
@@ -2005,12 +2046,67 @@ export function GameCanvas({ snapshot, className, interaction }: GameCanvasProps
       world.scale.set(scale);
     };
 
-    const onContextMenu = (ev: Event) => ev.preventDefault();
+    const cancelTouchLongPress = (): void => {
+      longPressEpoch++;
+      longPressAnchor = null;
+      if (longPressTimer !== null) {
+        clearTimeout(longPressTimer);
+        longPressTimer = null;
+      }
+    };
+
+    const isTouchPrimaryForLongPress = (e: FederatedPointerEvent): boolean => {
+      const ne = e.nativeEvent as PointerEvent | undefined;
+      return ne?.pointerType === "touch";
+    };
+
+    /**
+     * Opens the in-game unit context menu when the tile under (globalX, globalY) has a menu-eligible own unit.
+     * @returns whether the menu was opened
+     */
+    const tryOpenUnitContextMenu = (
+      clientX: number,
+      clientY: number,
+      globalX: number,
+      globalY: number
+    ): boolean => {
+      const snap = snapshotRef.current;
+      const cfg = interactionRef.current;
+      if (!snap || !cfg || snap.matchFinished || !world.visible) return false;
+      const local = world.toLocal(new Point(globalX, globalY));
+      const gx = Math.floor(local.x / TILE_PX);
+      const gy = Math.floor(local.y / TILE_PX);
+      if (gx < 0 || gy < 0 || gx >= snap.width || gy >= snap.height) return false;
+      const u = occupant(snap, gx, gy);
+      if (
+        !u ||
+        cfg.yourSeatIndex !== snap.activePlayerIndex ||
+        u.ownerSeatIndex !== cfg.yourSeatIndex ||
+        !contextMenuHasAnyAction(snap, u, cfg.yourSeatIndex)
+      ) {
+        return false;
+      }
+      useGameHudStore.getState().closeContextMenu();
+      useGameHudStore.getState().openContextMenu({ clientX, clientY, unitId: u.id });
+      return true;
+    };
+
+    const onContextMenu = (ev: Event): void => {
+      ev.preventDefault();
+      ev.stopPropagation();
+    };
+
+    const onAuxPointerDownCapture = (ev: PointerEvent): void => {
+      if (ev.button === 2) {
+        ev.preventDefault();
+      }
+    };
 
     const isPanButton = (e: FederatedPointerEvent) => e.shiftKey || e.button === 1 || e.button === 2;
 
     const onDown = (e: FederatedPointerEvent) => {
       if (!world.visible) return;
+      cancelTouchLongPress();
       pointerDown = { x: e.global.x, y: e.global.y, button: e.button };
       rmbPanCandidate = null;
       if (isPanButton(e)) {
@@ -2025,6 +2121,51 @@ export function GameCanvas({ snapshot, className, interaction }: GameCanvasProps
             start: { x: e.global.x, y: e.global.y },
             world: { x: world.position.x, y: world.position.y },
           };
+        }
+      }
+
+      if (
+        e.button === 0 &&
+        isTouchPrimaryForLongPress(e) &&
+        !panDrag &&
+        !rmbPanCandidate &&
+        pointerDown
+      ) {
+        const snap = snapshotRef.current;
+        const cfg = interactionRef.current;
+        const ne = e.nativeEvent as PointerEvent | undefined;
+        if (snap && cfg && ne && !snap.matchFinished) {
+          const local = world.toLocal(e.global);
+          const gx = Math.floor(local.x / TILE_PX);
+          const gy = Math.floor(local.y / TILE_PX);
+          if (gx >= 0 && gy >= 0 && gx < snap.width && gy < snap.height) {
+            const u = occupant(snap, gx, gy);
+            if (
+              u &&
+              cfg.yourSeatIndex === snap.activePlayerIndex &&
+              u.ownerSeatIndex === cfg.yourSeatIndex &&
+              contextMenuHasAnyAction(snap, u, cfg.yourSeatIndex)
+            ) {
+              const epochAtStart = longPressEpoch;
+              longPressAnchor = { x: e.global.x, y: e.global.y };
+              longPressTimer = setTimeout(() => {
+                longPressTimer = null;
+                if (epochAtStart !== longPressEpoch) return;
+                if (!pointerDown || pointerDown.button !== 0) return;
+                const moved = Math.hypot(
+                  pointerDown.x - (longPressAnchor?.x ?? pointerDown.x),
+                  pointerDown.y - (longPressAnchor?.y ?? pointerDown.y)
+                );
+                if (moved > LONG_PRESS_SLOP_PX) return;
+                if (
+                  tryOpenUnitContextMenu(ne.clientX, ne.clientY, pointerDown.x, pointerDown.y)
+                ) {
+                  gestureSuppressTapUntil = performance.now() + 450;
+                  cancelTouchLongPress();
+                }
+              }, LONG_PRESS_MS);
+            }
+          }
         }
       }
     };
@@ -2112,6 +2253,7 @@ export function GameCanvas({ snapshot, className, interaction }: GameCanvasProps
     };
 
     const onUp = (e: FederatedPointerEvent) => {
+      cancelTouchLongPress();
       const wasPanning = panDrag != null;
       panDrag = null;
       rmbPanCandidate = null;
@@ -2129,26 +2271,10 @@ export function GameCanvas({ snapshot, className, interaction }: GameCanvasProps
       if (down.button === 2) {
         const moved = Math.hypot(e.global.x - down.x, e.global.y - down.y);
         if (moved > 8) return;
-        const snap = snapshotRef.current;
-        const cfg = interactionRef.current;
-        if (!snap || !cfg || snap.matchFinished) return;
-        const local = world.toLocal(e.global);
-        const gx = Math.floor(local.x / TILE_PX);
-        const gy = Math.floor(local.y / TILE_PX);
-        if (gx < 0 || gy < 0 || gx >= snap.width || gy >= snap.height) return;
-        const u = occupant(snap, gx, gy);
-        if (
-          u &&
-          cfg.yourSeatIndex === snap.activePlayerIndex &&
-          u.ownerSeatIndex === cfg.yourSeatIndex &&
-          contextMenuHasAnyAction(snap, u, cfg.yourSeatIndex)
-        ) {
-          useGameHudStore.getState().closeContextMenu();
-          const ne = e.nativeEvent as PointerEvent | undefined;
-          const cx = typeof ne?.clientX === "number" ? ne.clientX : 0;
-          const cy = typeof ne?.clientY === "number" ? ne.clientY : 0;
-          useGameHudStore.getState().openContextMenu({ clientX: cx, clientY: cy, unitId: u.id });
-        }
+        const ne = e.nativeEvent as PointerEvent | undefined;
+        const cx = typeof ne?.clientX === "number" ? ne.clientX : 0;
+        const cy = typeof ne?.clientY === "number" ? ne.clientY : 0;
+        tryOpenUnitContextMenu(cx, cy, e.global.x, e.global.y);
         return;
       }
 
@@ -2329,6 +2455,12 @@ export function GameCanvas({ snapshot, className, interaction }: GameCanvasProps
     };
 
     const onPointerMove = (ev: FederatedPointerEvent): void => {
+      if (longPressTimer != null && longPressAnchor && pointerDown?.button === 0) {
+        const moved = Math.hypot(ev.global.x - longPressAnchor.x, ev.global.y - longPressAnchor.y);
+        if (moved > LONG_PRESS_SLOP_PX) {
+          cancelTouchLongPress();
+        }
+      }
       promoteRmbCandidateToPanIfNeeded(ev);
       if (!world.visible) return;
       if (!rmbPanCandidate && !panDrag) {
@@ -2342,8 +2474,6 @@ export function GameCanvas({ snapshot, className, interaction }: GameCanvasProps
       }
     };
 
-    /** After two-finger pan/pinch, ignore the synthetic pointer tap. */
-    let gestureSuppressTapUntil = 0;
     let pinchState: {
       lastDist: number;
       lastMidX: number;
@@ -2371,6 +2501,9 @@ export function GameCanvas({ snapshot, className, interaction }: GameCanvasProps
     };
 
     const onTouchStart = (ev: TouchEvent): void => {
+      if (ev.touches.length >= 2) {
+        cancelTouchLongPress();
+      }
       if (ev.touches.length === 2) {
         ev.preventDefault();
         const t0 = clientToCanvasGlobal(ev.touches[0]!.clientX, ev.touches[0]!.clientY);
@@ -2430,7 +2563,8 @@ export function GameCanvas({ snapshot, className, interaction }: GameCanvasProps
         app.stage?.off("pointerupoutside", onUp);
         app.stage?.off("pointermove", onPointerMove);
         app.canvas?.removeEventListener("wheel", onWheel);
-        app.canvas?.removeEventListener("contextmenu", onContextMenu);
+        app.canvas?.removeEventListener("contextmenu", onContextMenu, true);
+        app.canvas?.removeEventListener("pointerdown", onAuxPointerDownCapture, true);
         app.canvas?.removeEventListener("touchstart", onTouchStart);
         app.canvas?.removeEventListener("touchmove", onTouchMove);
         app.canvas?.removeEventListener("touchend", onTouchEnd);
@@ -2478,7 +2612,8 @@ export function GameCanvas({ snapshot, className, interaction }: GameCanvasProps
         app.stage.on("pointerupoutside", onUp);
         app.stage.on("pointermove", onPointerMove);
         app.canvas.addEventListener("wheel", onWheel, { passive: false });
-        app.canvas.addEventListener("contextmenu", onContextMenu);
+        app.canvas.addEventListener("contextmenu", onContextMenu, { capture: true });
+        app.canvas.addEventListener("pointerdown", onAuxPointerDownCapture, { capture: true });
         app.canvas.addEventListener("touchstart", onTouchStart, { passive: false });
         app.canvas.addEventListener("touchmove", onTouchMove, { passive: false });
         app.canvas.addEventListener("touchend", onTouchEnd);
@@ -2517,7 +2652,12 @@ export function GameCanvas({ snapshot, className, interaction }: GameCanvasProps
   return (
     <div
       ref={hostRef}
-      className={`${className ?? "min-h-[420px] w-full flex-1 rounded-lg"} touch-none`}
+      className={`${className ?? "min-h-[420px] w-full flex-1 rounded-lg"} touch-none select-none`}
+      style={{ WebkitTouchCallout: "none" }}
+      onContextMenu={(ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+      }}
     />
   );
 }

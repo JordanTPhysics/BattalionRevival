@@ -642,6 +642,8 @@ public class GameWindow extends JFrame {
         private Timer effectsTimer;
         private static final int EFFECTS_TIMER_MS = 16;
 
+        private Timer terrainStripAnimTimer;
+
         private GameMapPanel(
             GameMap map,
             AssetManager assetManager,
@@ -1860,6 +1862,23 @@ public class GameWindow extends JFrame {
 
         private void updatePreferredSize() {
             setPreferredSize(new Dimension(map.getWidth() * tileSize, map.getHeight() * tileSize));
+        }
+
+        @Override
+        public void addNotify() {
+            super.addNotify();
+            if (terrainStripAnimTimer == null) {
+                terrainStripAnimTimer = new Timer(1000, e -> repaint());
+            }
+            terrainStripAnimTimer.start();
+        }
+
+        @Override
+        public void removeNotify() {
+            if (terrainStripAnimTimer != null) {
+                terrainStripAnimTimer.stop();
+            }
+            super.removeNotify();
         }
 
         @Override

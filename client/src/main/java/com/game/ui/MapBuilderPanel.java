@@ -8,6 +8,7 @@ import com.game.model.structures.StructureType;
 import com.game.model.units.FacingDirection;
 
 import javax.swing.JPanel;
+import javax.swing.Timer;
 import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.Graphics;
@@ -30,6 +31,8 @@ public class MapBuilderPanel extends JPanel {
     private final Runnable zoomChangeListener;
     private int tileSize = BASE_TILE_SIZE;
     private Point selectedGridCell;
+
+    private Timer terrainStripAnimTimer;
 
     private TerrainType selectedTerrain = TerrainType.PLAINS_1;
     private StructureType selectedStructure;
@@ -242,6 +245,23 @@ public class MapBuilderPanel extends JPanel {
         repaint();
         statusConsumer.accept("Removed unit at (" + selectedGridCell.x + ", " + selectedGridCell.y + ").");
         return true;
+    }
+
+    @Override
+    public void addNotify() {
+        super.addNotify();
+        if (terrainStripAnimTimer == null) {
+            terrainStripAnimTimer = new Timer(1000, e -> repaint());
+        }
+        terrainStripAnimTimer.start();
+    }
+
+    @Override
+    public void removeNotify() {
+        if (terrainStripAnimTimer != null) {
+            terrainStripAnimTimer.stop();
+        }
+        super.removeNotify();
     }
 
     @Override
